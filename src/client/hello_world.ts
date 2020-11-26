@@ -50,8 +50,16 @@ const pathToProgram = 'dist/program/wallet.so';
  * Layout of the greeted account data
  */
 const greetedAccountDataLayout = BufferLayout.struct([
-  BufferLayout.seq(BufferLayout.u8(), 32, 'owner'),
-  BufferLayout.u8('state')
+  BufferLayout.u8('state'),
+  BufferLayout.u8(), // alignment
+  BufferLayout.seq(
+    BufferLayout.struct([
+      BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
+      BufferLayout.u16('weight'),
+    ]),
+    11,
+    'owners'
+  ),
 ]);
 
 /**
@@ -138,6 +146,7 @@ export async function loadProgram(): Promise<void> {
   greetedPubkey = greetedAccount.publicKey;
   console.log('Creating account', greetedPubkey.toBase58(), 'to say hello to');
   const space = greetedAccountDataLayout.span;
+  console.log(space)
   const lamports = await connection.getMinimumBalanceForRentExemption(
     greetedAccountDataLayout.span,
   );
@@ -199,9 +208,15 @@ export async function reportHellos(): Promise<void> {
   }
   const info = greetedAccountDataLayout.decode(Buffer.from(accountInfo.data));
   console.log(
-    greetedPubkey.toBase58(),
-    'has been greeted',
-    info.owner.toString(),
-    'times',
+    'key #1: ',
+    new PublicKey(info.owners[0].pubkey).toBase58(),
+    'and weight',
+    info.owners[0].weight,
+  );
+  console.log(
+    'key #2: ',
+    new PublicKey(info.owners[1].pubkey).toBase58(),
+    'and weight',
+    info.owners[1].weight,
   );
 }

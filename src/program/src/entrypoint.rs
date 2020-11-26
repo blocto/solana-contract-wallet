@@ -1,5 +1,6 @@
 use crate::{
     state::Account,
+    state::Owner,
     instruction::WalletInstruction,
 };
 use solana_program::{
@@ -42,11 +43,20 @@ fn process_instruction(
         return Err(ProgramError::InvalidAccountData);
     }
 
+    info!("FUCK1");
     // Increment and store the number of times the account has been greeted
     let mut stored_account = Account::unpack_unchecked(&account.data.borrow())?;
     // let mut num_greets = LittleEndian::read_u32(&data);
     // num_greets += 1;
-    stored_account.owner = *account.owner;
+    stored_account.owners[0] = Owner {
+      pubkey: *account.owner,
+      weight: 1000_u16,
+    };
+
+    stored_account.owners[1] = Owner {
+      pubkey: *account.key,
+      weight: 500_u16,
+    };
 
     Account::pack(stored_account, &mut account.data.borrow_mut())?;
 
