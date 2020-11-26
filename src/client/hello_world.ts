@@ -50,7 +50,8 @@ const pathToProgram = 'dist/program/wallet.so';
  * Layout of the greeted account data
  */
 const greetedAccountDataLayout = BufferLayout.struct([
-  BufferLayout.u32('numGreets'),
+  BufferLayout.seq(BufferLayout.u8(), 32, 'owner'),
+  BufferLayout.u8('state')
 ]);
 
 /**
@@ -200,7 +201,7 @@ export async function reportHellos(): Promise<void> {
   console.log(
     greetedPubkey.toBase58(),
     'has been greeted',
-    info.numGreets.toString(),
+    info.owner.toString(),
     'times',
   );
 }
