@@ -44,7 +44,7 @@ let programId: PublicKey;
  */
 let greetedPubkey: PublicKey;
 
-const pathToProgram = 'dist/program/helloworld.so';
+const pathToProgram = 'dist/program/wallet.so';
 
 /**
  * Layout of the greeted account data

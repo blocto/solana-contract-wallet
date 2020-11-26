@@ -432,7 +432,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-bpf-helloworld"
+name = "solana-contract-wallet"
 version = "0.0.1"
 dependencies = [
  "byteorder",
