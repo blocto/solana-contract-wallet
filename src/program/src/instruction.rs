@@ -6,7 +6,7 @@ use solana_program::{
 
 #[repr(C)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum Command {
+pub enum WalletInstruction {
     /// Add a Pubkey to owner list
     AddOwner {
         pubkey: Pubkey,
