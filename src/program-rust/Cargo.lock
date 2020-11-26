@@ -441,9 +441,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi"
-version = "1.4.8"
+version = "1.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "727cb45b2988d54cf5e56aa618fc3967df2d63a0900d14da61b8485deaef1d2c"
+checksum = "fb6907a4578445b040d0ed4fe062d15ce0810c694206bc622af5b6b67357aadd"
 dependencies = [
  "bs58",
  "bv",
@@ -461,9 +461,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi-macro"
-version = "1.4.8"
+version = "1.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e8ac9535d322d4bfaedd4ab74e6277a442b50d975a88c1e348082f9df90395"
+checksum = "ea98c019f9b5b62e4f35dd4c4906994cf23d6de3defa877894489afe086a38af"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -474,9 +474,9 @@ dependencies = [
 
 [[package]]
 name = "solana-logger"
-version = "1.4.8"
+version = "1.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6112928096e211172e85328cf5d3c35147cc2f242b284bbf23b581e87eea17d2"
+checksum = "f3fe857294979312cd722c6b810790bd05af6572ee11165f6fbc8d4ee800357c"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -515,9 +515,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk-macro"
-version = "1.4.8"
+version = "1.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c5bf19cc79f1d60cd17e61004b547e44b2af561f8671a7c28be6d790460a8f3"
+checksum = "8eca3e6561c5f513e4281e0a43364de51fc6ee3f66cb06fd233e3fe5c52d50c0"
 dependencies = [
  "bs58",
  "proc-macro2",
@@ -534,9 +534,9 @@ checksum = "343f3f510c2915908f155e94f17220b19ccfacf2a64a2a5d8004f2c3e311e7fd"
 
 [[package]]
 name = "syn"
-version = "1.0.48"
+version = "1.0.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc371affeffc477f42a221a1e4297aedcea33d47d19b61455588bd9d8f6b19ac"
+checksum = "3b4f34193997d92804d359ed09953e25d5138df6bcc055a71bf68ee89fdf9223"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -545,9 +545,9 @@ dependencies = [
 
 [[package]]
 name = "termcolor"
-version = "1.1.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb6bfa289a4d7c5766392812c0a1f4c1ba45afa1ad47803c11e1f407d846d75f"
+checksum = "2dfed899f0eb03f32ee8c6a0aabdb8a7949659e3466561fc0adf54e26d88c5f4"
 dependencies = [
  "winapi-util",
 ]

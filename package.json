@@ -1,10 +1,10 @@
 {
-  "name": "helloworld",
+  "name": "solana-contract-wallet",
   "version": "0.0.1",
   "description": "",
   "repository": {
     "type": "git",
-    "url": "https://github.com/solana-labs/example-helloworld"
+    "url": "https://github.com/portto/solana-contract-wallet"
   },
   "keywords": [],
   "author": "",
@@ -15,13 +15,10 @@
     "lint": "eslint --ext .ts src/client/* && prettier --check \"src/client/**/*.ts\"",
     "lint:fix": "eslint --ext .ts src/client/* --fix && prettier --write \"src/client/**/*.ts\"",
     "bpf-sdk:update": "solana-bpf-sdk-install node_modules/@solana/web3.js && npm run clean",
-    "clean": "npm run clean:program-c && npm run clean:program-rust",
     "clean:store": "rm -rf src/client/util/store/config.json",
-    "build:program-c": "rm -f ./dist/program/helloworld.so && V=1 make -C ./src/program-c && npm run clean:store",
-    "clean:program-c": "V=1 make -C ./src/program-c clean && npm run clean:store",
-    "build:program-rust": "cargo build-bpf --manifest-path=./src/program-rust/Cargo.toml --bpf-out-dir=dist/program && mv dist/program/solana_bpf_helloworld.so dist/program/helloworld.so && npm run clean:store",
-    "clean:program-rust": "cargo clean --manifest-path=./src/program-rust/Cargo.toml && rm -rf ./dist && npm run clean:store",
-    "test:program-rust": "cargo test-bpf --manifest-path=./src/program-rust/Cargo.toml",
+    "build": "cargo build-bpf --manifest-path=./src/program-rust/Cargo.toml --bpf-out-dir=dist/program && mv dist/program/solana_bpf_helloworld.so dist/program/helloworld.so && npm run clean:store",
+    "clean": "cargo clean --manifest-path=./src/program-rust/Cargo.toml && rm -rf ./dist && npm run clean:store",
+    "test": "cargo test-bpf --manifest-path=./src/program-rust/Cargo.toml",
     "cluster:localnet": "npm run clean:store && rm -f .env",
     "cluster:devnet": "npm run clean:store && cp cluster-devnet.env .env",
     "cluster:testnet": "npm run clean:store && cp cluster-testnet.env .env",
