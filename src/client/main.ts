@@ -6,9 +6,10 @@ import {
   establishConnection,
   establishPayer,
   loadProgram,
-  sayHello,
   addOwner,
   removeOwner,
+  sayHello,
+  sayHelloWithContractWallet,
   reportWallet,
 } from './wallet_test';
 
@@ -25,11 +26,14 @@ async function main() {
   await loadProgram();
 
   // Add a new owner to the wallet account
-  // await addOwner(1000);
+  await addOwner(1000);
   // await addOwner(100);
 
-  // Say hello to an account
+  // Say hello
   await sayHello();
+
+  // Say hello from a contract wallet
+  await sayHelloWithContractWallet();
 
   // Show wallet account status
   await reportWallet();

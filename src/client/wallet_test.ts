@@ -11,7 +11,6 @@ import {
   PublicKey,
   LAMPORTS_PER_SOL,
   SystemProgram,
-  TransactionInstruction,
   Transaction,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
@@ -303,6 +302,36 @@ export async function removeOwner(index: number): Promise<void> {
     walletPubkey: walletPubkey.toBase58(),
     owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey: secretKey.toString() }))),
   });
+}
+
+/**
+ * Say hello with contract wallet
+ */
+export async function sayHelloWithContractWallet(): Promise<void> {
+  const signers = owners.length ? [owners[0]] : [];
+
+  console.log(`Saying hello to ${walletPubkey.toBase58()} with contract wallet`);
+  const internalTransaction = Wallet.createHelloTransaction(
+    programId,
+    walletPubkey,
+    signers,
+  );
+  const transaction = Wallet.createInvokeTransaction(
+    programId,
+    walletPubkey,
+    internalTransaction,
+    signers,
+  );
+
+  await sendAndConfirmTransaction(
+    connection,
+    new Transaction().add(transaction),
+    [payerAccount, ...signers],
+    {
+      commitment: 'singleGossip',
+      preflightCommitment: 'singleGossip',
+    },
+  );
 }
 
 /**

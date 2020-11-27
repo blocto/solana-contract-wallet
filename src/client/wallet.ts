@@ -19,7 +19,41 @@ export enum Instruction {
   Hello,
 }
 
+const AccountMetaLayout = BufferLayout.struct([
+  BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
+  BufferLayout.u8('isSigner'),
+  BufferLayout.u8('isWritable')
+]);
+
 export class Wallet {
+  static encodeInstruction(
+    instruction: TransactionInstruction
+  ): Buffer {
+    const dataLayout = BufferLayout.struct([
+      BufferLayout.seq(BufferLayout.u8(), 32, 'programId'),
+      BufferLayout.u32('keysLength'),
+      BufferLayout.seq(AccountMetaLayout, instruction.keys.length, 'keys'),
+      BufferLayout.seq(BufferLayout.u8(), instruction.data.length, 'data'),
+    ]);
+
+    const data = Buffer.alloc(dataLayout.span);
+    dataLayout.encode(
+      {
+        programId: instruction.programId.toBuffer(),
+        keysLength: instruction.keys.length,
+        keys: instruction.keys.map(key => ({
+          pubkey: key.pubkey.toBuffer(),
+          isSigner: key.isSigner,
+          isWritable: key.isWritable,
+        })),
+        data: instruction.data,
+      },
+      data,
+    );
+
+    return data;
+  }
+
   static createAddOwnerTransaction(
     programId: PublicKey,
     walletPubkey: PublicKey,
@@ -103,14 +137,59 @@ export class Wallet {
 
     return new TransactionInstruction({
       keys,
-      programId: programId,
+      programId,
+      data,
+    });
+  }
+
+  static createInvokeTransaction(
+    programId: PublicKey,
+    walletPubkey: PublicKey,
+    internalInstruction: TransactionInstruction,
+    signers: Array<Account>,
+  ): TransactionInstruction {
+    const internalInstructionData = 
+      Wallet.encodeInstruction(internalInstruction);
+
+    const dataLayout = BufferLayout.struct([
+      BufferLayout.u8('instruction'),
+      BufferLayout.seq(BufferLayout.u8(), internalInstructionData.length, 'data'),
+    ]);
+
+    const data = Buffer.alloc(dataLayout.span);
+    dataLayout.encode(
+      {
+        instruction: Instruction.Invoke,
+        data: internalInstructionData,
+      },
+      data,
+    );
+
+    let keys = signers.map(signer => ({
+      pubkey: signer.publicKey,
+      isSigner: true,
+      isWritable: true,
+    }))
+
+    keys = [
+      {
+        pubkey: walletPubkey,
+        isSigner: false,
+        isWritable: true,
+      },
+      ...keys,
+    ]
+
+    return new TransactionInstruction({
+      keys,
+      programId,
       data,
     });
   }
 
   static createHelloTransaction(
     programId: PublicKey,
-    dest: PublicKey,
+    walletPubkey: PublicKey,
     signers: Array<Account>,
   ): TransactionInstruction {
     const dataLayout = BufferLayout.struct([
@@ -132,8 +211,8 @@ export class Wallet {
     }))
 
     return new TransactionInstruction({
-      keys: [{pubkey: dest, isSigner: false, isWritable: true}, ...keys],
-      programId: programId,
+      keys: [{pubkey: walletPubkey, isSigner: false, isWritable: true}, ...keys],
+      programId,
       data,
     });
   }

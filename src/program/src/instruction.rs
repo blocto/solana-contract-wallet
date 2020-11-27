@@ -2,9 +2,8 @@
 
 use crate::error::WalletError;
 use serde::Serialize;
-use serde_json::Result as SerdeResult;
 use solana_program::{
-  instruction::{AccountMeta, Instruction},
+  instruction::{Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
 };
