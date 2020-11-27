@@ -43,14 +43,14 @@ let programId: PublicKey;
 /**
  * The public key of the account we are saying hello to
  */
-let greetedPubkey: PublicKey;
+let walletPubkey: PublicKey;
 
 const pathToProgram = 'dist/program/wallet.so';
 
 /**
  * Layout of the greeted account data
  */
-const greetedAccountDataLayout = BufferLayout.struct([
+const walletAccountDataLayout = BufferLayout.struct([
   BufferLayout.u8('state'),
   BufferLayout.u8('n_owners'),
   BufferLayout.seq(
@@ -90,7 +90,7 @@ export async function establishPayer(): Promise<void> {
 
     // Calculate the cost to fund the greeter account
     fees += await connection.getMinimumBalanceForRentExemption(
-      greetedAccountDataLayout.span,
+      walletAccountDataLayout.span,
     );
 
     // Calculate the cost of sending the transactions
@@ -101,12 +101,13 @@ export async function establishPayer(): Promise<void> {
   }
 
   const lamports = await connection.getBalance(payerAccount.publicKey);
+
   console.log(
     'Using account',
     payerAccount.publicKey.toBase58(),
     'containing',
     lamports / LAMPORTS_PER_SOL,
-    'Sol to pay for fees',
+    'Sol to process requests',
   );
 }
 
@@ -120,7 +121,7 @@ export async function loadProgram(): Promise<void> {
   try {
     const config = await store.load('config.json');
     programId = new PublicKey(config.programId);
-    greetedPubkey = new PublicKey(config.greetedPubkey);
+    walletPubkey = new PublicKey(config.walletPubkey);
     await connection.getAccountInfo(programId);
     console.log('Program already loaded to account', programId.toBase58());
     return;
@@ -142,19 +143,19 @@ export async function loadProgram(): Promise<void> {
   programId = programAccount.publicKey;
   console.log('Program loaded to account', programId.toBase58());
 
-  // Create the greeted account
-  const greetedAccount = new Account();
-  greetedPubkey = greetedAccount.publicKey;
-  console.log('Creating account', greetedPubkey.toBase58(), 'to say hello to');
-  const space = greetedAccountDataLayout.span;
+  // Create the wallet account
+  const walletAccount = new Account();
+  walletPubkey = walletAccount.publicKey;
+  console.log('Creating account', walletPubkey.toBase58(), 'to say hello to');
+  const space = walletAccountDataLayout.span;
   console.log('Account storage size', space)
   const lamports = await connection.getMinimumBalanceForRentExemption(
-    greetedAccountDataLayout.span,
+    walletAccountDataLayout.span,
   );
   const transaction = new Transaction().add(
     SystemProgram.createAccount({
       fromPubkey: payerAccount.publicKey,
-      newAccountPubkey: greetedPubkey,
+      newAccountPubkey: walletPubkey,
       lamports,
       space,
       programId,
@@ -163,7 +164,7 @@ export async function loadProgram(): Promise<void> {
   await sendAndConfirmTransaction(
     connection,
     transaction,
-    [payerAccount, greetedAccount],
+    [payerAccount, walletAccount],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -174,7 +175,7 @@ export async function loadProgram(): Promise<void> {
   await store.save('config.json', {
     url: urlTls,
     programId: programId.toBase58(),
-    greetedPubkey: greetedPubkey.toBase58(),
+    walletPubkey: walletPubkey.toBase58(),
   });
 }
 
@@ -182,11 +183,37 @@ export async function loadProgram(): Promise<void> {
  * Say hello
  */
 export async function sayHello(): Promise<void> {
-  console.log('Saying hello to', greetedPubkey.toBase58());
+  console.log('Saying hello to', walletPubkey.toBase58());
   const instruction = Wallet.createHelloTransaction(
     programId,
-    greetedPubkey,
+    walletPubkey,
   );
+  await sendAndConfirmTransaction(
+    connection,
+    new Transaction().add(instruction),
+    [payerAccount],
+    {
+      commitment: 'singleGossip',
+      preflightCommitment: 'singleGossip',
+    },
+  );
+}
+
+/**
+ * Say hello
+ */
+export async function addOwner(): Promise<void> {
+  console.log('Adding a new owner to', walletPubkey.toBase58());
+  const ownerAccount = new Account();
+
+  const instruction = Wallet.createAddOwnerTransaction(
+    programId,
+    walletPubkey,
+    ownerAccount.publicKey,
+    1000,
+    [payerAccount],
+  );
+
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
@@ -201,26 +228,23 @@ export async function sayHello(): Promise<void> {
 /**
  * Report the number of times the greeted account has been said hello to
  */
-export async function reportHellos(): Promise<void> {
-  const accountInfo = await connection.getAccountInfo(greetedPubkey);
+export async function reportWallet(): Promise<void> {
+  const accountInfo = await connection.getAccountInfo(walletPubkey);
   if (accountInfo === null) {
-    throw 'Error: cannot find the greeted account';
+    throw 'Error: cannot find the wallet account';
   }
-  const info = greetedAccountDataLayout.decode(Buffer.from(accountInfo.data));
+  const info = walletAccountDataLayout.decode(Buffer.from(accountInfo.data));
+
   console.log(
     'number of owners: ',
     info.n_owners,
   );
-  console.log(
-    'key #1: ',
-    new PublicKey(info.owners[0].pubkey).toBase58(),
-    'and weight',
-    info.owners[0].weight,
-  );
-  console.log(
-    'key #2: ',
-    new PublicKey(info.owners[1].pubkey).toBase58(),
-    'and weight',
-    info.owners[1].weight,
-  );
+
+  for (let i = 0; i < info.n_owners; i++) {
+    console.log(
+      `key #${i}: {\n`,
+      `pubkey: ${String(new PublicKey(info.owners[i].pubkey).toBase58())}\n`,
+      `weight: ${String(info.owners[i].weight)}\n}`,
+    );
+  }
 }

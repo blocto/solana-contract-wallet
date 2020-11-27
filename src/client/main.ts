@@ -7,8 +7,9 @@ import {
   establishPayer,
   loadProgram,
   sayHello,
-  reportHellos,
-} from './hello_world';
+  addOwner,
+  reportWallet,
+} from './wallet_test';
 
 async function main() {
   console.log("Let's say hello to a Solana account...");
@@ -25,8 +26,11 @@ async function main() {
   // Say hello to an account
   await sayHello();
 
-  // Find out how many times that account has been greeted
-  await reportHellos();
+  // Add a new owner to the wallet account
+  await addOwner();
+
+  // Show wallet account status
+  await reportWallet();
 
   console.log('Success');
 }

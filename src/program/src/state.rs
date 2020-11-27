@@ -5,7 +5,7 @@ use num_enum::TryFromPrimitive;
 use solana_program::{
   pubkey::Pubkey,
   program_error::ProgramError,
-  program_pack::{Pack, Sealed},
+  program_pack::{IsInitialized, Pack, Sealed},
 };
 use std::mem;
 
@@ -69,7 +69,14 @@ impl Pack for Account {
     }
   }
 }
+
 impl Sealed for Account {}
+
+impl IsInitialized for Account {
+  fn is_initialized(&self) -> bool {
+      self.state != AccountState::Uninitialized
+  }
+}
 
 /// Account data.
 #[repr(C)]

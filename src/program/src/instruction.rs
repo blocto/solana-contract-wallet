@@ -7,6 +7,7 @@ use solana_program::{
   program_error::ProgramError,
   pubkey::Pubkey,
 };
+use std::convert::TryInto;
 
 /// Instructions supported by the multisig wallet program.
 #[repr(C)]
@@ -40,16 +41,18 @@ impl WalletInstruction {
 
     let (&tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
     Ok(match tag {
-      // 0 => {
-      //   let (&decimals, rest) = rest.split_first().ok_or(InvalidInstruction)?;
-      //   let (mint_authority, rest) = Self::unpack_pubkey(rest)?;
-      //   let (freeze_authority, _rest) = Self::unpack_pubkey_option(rest)?;
-      //   Self::InitializeMint {
-      //       mint_authority,
-      //       freeze_authority,
-      //       decimals,
-      //   }
-      // }
+      0 => {
+        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
+        let weight = rest
+          .get(..2)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u16::from_le_bytes)
+          .ok_or(InvalidInstruction)?;
+        Self::AddOwner {
+          pubkey,
+          weight,
+        }
+      }
       // 1 => Self::InitializeAccount,
       2 => {
         let (program_id, rest) = Self::unpack_pubkey(rest)?;
