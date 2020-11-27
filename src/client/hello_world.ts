@@ -20,6 +20,7 @@ import fs from 'mz/fs';
 // @ts-ignore
 import BufferLayout from 'buffer-layout';
 
+import {Wallet} from './wallet';
 import {url, urlTls} from './util/url';
 import {Store} from './util/store';
 import {newAccountWithLamports} from './util/new-account-with-lamports';
@@ -51,7 +52,7 @@ const pathToProgram = 'dist/program/wallet.so';
  */
 const greetedAccountDataLayout = BufferLayout.struct([
   BufferLayout.u8('state'),
-  BufferLayout.u8(), // alignment
+  BufferLayout.u8('n_owners'),
   BufferLayout.seq(
     BufferLayout.struct([
       BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
@@ -146,7 +147,7 @@ export async function loadProgram(): Promise<void> {
   greetedPubkey = greetedAccount.publicKey;
   console.log('Creating account', greetedPubkey.toBase58(), 'to say hello to');
   const space = greetedAccountDataLayout.span;
-  console.log(space)
+  console.log('Account storage size', space)
   const lamports = await connection.getMinimumBalanceForRentExemption(
     greetedAccountDataLayout.span,
   );
@@ -182,11 +183,10 @@ export async function loadProgram(): Promise<void> {
  */
 export async function sayHello(): Promise<void> {
   console.log('Saying hello to', greetedPubkey.toBase58());
-  const instruction = new TransactionInstruction({
-    keys: [{pubkey: greetedPubkey, isSigner: false, isWritable: true}],
+  const instruction = Wallet.createHelloTransaction(
     programId,
-    data: Buffer.alloc(0), // All instructions are hellos
-  });
+    greetedPubkey,
+  );
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
@@ -207,6 +207,10 @@ export async function reportHellos(): Promise<void> {
     throw 'Error: cannot find the greeted account';
   }
   const info = greetedAccountDataLayout.decode(Buffer.from(accountInfo.data));
+  console.log(
+    'number of owners: ',
+    info.n_owners,
+  );
   console.log(
     'key #1: ',
     new PublicKey(info.owners[0].pubkey).toBase58(),

@@ -1,9 +1,15 @@
+#![deny(missing_docs)]
+#![forbid(unsafe_code)]
+
+//! A multisig wallet program for the Solana blockchain
+
 #[macro_use]
 extern crate serde_derive;
 
 pub mod error;
 pub mod instruction;
 pub mod state;
+pub mod processor;
 
 #[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
