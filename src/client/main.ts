@@ -8,6 +8,7 @@ import {
   loadProgram,
   sayHello,
   addOwner,
+  removeOwner,
   reportWallet,
 } from './wallet_test';
 
@@ -24,10 +25,17 @@ async function main() {
   await loadProgram();
 
   // Add a new owner to the wallet account
-  await addOwner();
+  await addOwner(1000);
+  await addOwner(100);
 
   // Say hello to an account
   await sayHello();
+
+  // Show wallet account status
+  await reportWallet();
+
+  // Remove an owner from the wallet account
+  await removeOwner(1);
 
   // Show wallet account status
   await reportWallet();

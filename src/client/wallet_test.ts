@@ -128,7 +128,12 @@ export async function loadProgram(): Promise<void> {
     programId = new PublicKey(config.programId);
     walletPubkey = new PublicKey(config.walletPubkey);
     const ownersRaw = JSON.parse(config.owners);
-    owners = ownersRaw.map(({ secretKey }: any) => new Account(secretKey))
+    owners = ownersRaw.map(({ secretKey }: any) => {
+      const keyArray = secretKey.split(',').map((number: string) => parseInt(number, 10));
+      const account = new Account(keyArray);
+      console.log('Loaded account', account.publicKey.toBase58());
+      return account
+    })
     await connection.getAccountInfo(programId);
     console.log('Program already loaded to account', programId.toBase58());
     return;
@@ -137,7 +142,7 @@ export async function loadProgram(): Promise<void> {
   }
 
   // Load the program
-  console.log('Loading hello world program...');
+  console.log('Loading wallet program...');
   const data = await fs.readFile(pathToProgram);
   const programAccount = new Account();
   await BpfLoader.load(
@@ -160,6 +165,7 @@ export async function loadProgram(): Promise<void> {
   const lamports = await connection.getMinimumBalanceForRentExemption(
     walletAccountDataLayout.span,
   );
+  console.log('Account lamports', lamports)
   const transaction = new Transaction().add(
     SystemProgram.createAccount({
       fromPubkey: payerAccount.publicKey,
@@ -184,7 +190,7 @@ export async function loadProgram(): Promise<void> {
     url: urlTls,
     programId: programId.toBase58(),
     walletPubkey: walletPubkey.toBase58(),
-    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey }))),
+    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey: secretKey.toString() }))),
   });
 }
 
@@ -192,15 +198,18 @@ export async function loadProgram(): Promise<void> {
  * Say hello
  */
 export async function sayHello(): Promise<void> {
+  const signers = owners.length ? [owners[0]] : [];
+
   console.log('Saying hello to', walletPubkey.toBase58());
   const instruction = Wallet.createHelloTransaction(
     programId,
     walletPubkey,
+    signers,
   );
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
-    [payerAccount],
+    [payerAccount, ...signers],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -209,28 +218,30 @@ export async function sayHello(): Promise<void> {
 }
 
 /**
- * Say hello
+ * Add new owner
  */
-export async function addOwner(): Promise<void> {
+export async function addOwner(weight: number): Promise<void> {
+  const signers = owners.length ? [owners[0]] : [];
+
   console.log('Adding a new owner to', walletPubkey.toBase58());
-  const ownerAccount = new Account();
+  const newOwnerAccount = new Account();
   owners = [
     ...owners,
-    ownerAccount,
+    newOwnerAccount,
   ]
 
   const instruction = Wallet.createAddOwnerTransaction(
     programId,
     walletPubkey,
-    ownerAccount.publicKey,
-    1000,
-    [payerAccount],
+    newOwnerAccount.publicKey,
+    weight,
+    signers,
   );
 
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
-    [payerAccount],
+    [payerAccount, ...signers],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -243,7 +254,54 @@ export async function addOwner(): Promise<void> {
     url: urlTls,
     programId: programId.toBase58(),
     walletPubkey: walletPubkey.toBase58(),
-    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey }))),
+    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey: secretKey.toString() }))),
+  });
+}
+
+/**
+ * Remove owner
+ */
+export async function removeOwner(index: number): Promise<void> {
+  const signers = owners.length ? [owners[0]] : [];
+
+  console.log('Removing an owner from', walletPubkey.toBase58());
+
+  const instruction = Wallet.createRemoveOwnerTransaction(
+    programId,
+    walletPubkey,
+    owners[index].publicKey,
+    signers,
+  );
+
+  await sendAndConfirmTransaction(
+    connection,
+    new Transaction().add(instruction),
+    [payerAccount, ...signers],
+    {
+      commitment: 'singleGossip',
+      preflightCommitment: 'singleGossip',
+    },
+  );
+
+  const accountInfo = await connection.getAccountInfo(walletPubkey);
+  if (accountInfo === null) {
+    throw 'Error: cannot find the wallet account';
+  }
+  const info = walletAccountDataLayout.decode(Buffer.from(accountInfo.data));
+
+  owners = owners.filter(owner => 
+    info.owners.slice(0, info.n_owners).findIndex((realOwner: any) =>
+      new PublicKey(realOwner.pubkey).toBase58() === owner.publicKey.toBase58()
+    ) !== -1
+  )
+
+  // Save this info for next time
+  const store = new Store();
+  await store.save('config.json', {
+    url: urlTls,
+    programId: programId.toBase58(),
+    walletPubkey: walletPubkey.toBase58(),
+    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey: secretKey.toString() }))),
   });
 }
 
@@ -265,7 +323,7 @@ export async function reportWallet(): Promise<void> {
   for (let i = 0; i < info.n_owners; i++) {
     console.log(
       `key #${i}: {\n`,
-      `pubkey: ${String(new PublicKey(info.owners[i].pubkey).toBase58())}\n`,
+      `pubkey: ${new PublicKey(info.owners[i].pubkey).toBase58()}\n`,
       `weight: ${String(info.owners[i].weight)}\n}`,
     );
   }

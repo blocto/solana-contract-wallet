@@ -9,6 +9,9 @@ use solana_program::{
 };
 use std::mem;
 
+/// Maximum signature weight for instructions
+pub const MIN_WEIGHT: u16 = 1000;
+
 /// Maximum number of multisignature owners
 pub const MAX_OWNERS: usize = 11;
 

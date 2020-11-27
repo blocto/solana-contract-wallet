@@ -1,7 +1,7 @@
 //! Program state processor
 
 use crate::{
-  state::{Account, Owner, AccountState},
+  state::{Account, Owner, AccountState, MIN_WEIGHT, MAX_OWNERS},
   instruction::WalletInstruction,
   error::WalletError,
 };
@@ -13,7 +13,10 @@ use solana_program::{
   program_pack::{IsInitialized, Pack},
   pubkey::Pubkey,
 };
-use std::mem;
+use std::{
+  mem,
+  collections::BTreeMap,
+};
 
 /// Program state handler.
 pub struct Processor {}
@@ -30,6 +33,11 @@ impl Processor {
     pubkey: Pubkey,
     weight: u16,
   ) -> ProgramResult {
+    if weight < MIN_WEIGHT {
+      info!("WalletError: Initial key weight too low");
+      return Err(WalletError::InvalidInstruction.into())
+    }
+
     wallet_account.state = AccountState::Initialized;
     wallet_account.n_owners = 1;
     wallet_account.owners[0] = Owner {
@@ -47,6 +55,19 @@ impl Processor {
     weight: u16,
   ) -> ProgramResult {
     let n_owners = wallet_account.n_owners;
+
+    if usize::from(n_owners) >= MAX_OWNERS {
+      info!("WalletError: Already too many owners");
+      return Err(WalletError::InvalidInstruction.into())
+    }
+
+    for index in 0..usize::from(n_owners) {
+      if wallet_account.owners[index].pubkey.to_bytes() == pubkey.to_bytes() {
+        info!("WalletError: Owner already exists");
+        return Err(WalletError::InvalidInstruction.into())
+      }
+    }
+
     wallet_account.owners[usize::from(n_owners)] = Owner {
       pubkey: pubkey,
       weight: weight,
@@ -63,12 +84,58 @@ impl Processor {
     pubkey: Pubkey
   ) -> ProgramResult {
     let n_owners = wallet_account.n_owners;
-    // wallet_account.owners[usize::from(n_owners)] = Owner {
-    //   pubkey: pubkey,
-    //   weight: weight,
-    // };
 
-    wallet_account.n_owners = n_owners - 1;
+    for index in 0..usize::from(n_owners) {
+      if wallet_account.owners[index].pubkey.to_bytes() == pubkey.to_bytes() {
+        // Swap current item with the last item and remove the last item
+        wallet_account.owners[index] = wallet_account.owners[usize::from(n_owners) - 1];
+        wallet_account.owners[usize::from(n_owners) - 1] = Owner {
+          pubkey: Pubkey::new_from_array([0; 32]),
+          weight: 0,
+        };
+        wallet_account.n_owners = n_owners - 1;
+        return Ok(())
+      }
+    }
+
+    info!("WalletError: Cannot find the target owner to remove");
+    Err(WalletError::InvalidInstruction.into())
+  }
+
+  /// Check if signatures have enought weight
+  fn check_signatures(
+    accounts: &[AccountInfo],
+    wallet_account: &Account,
+  ) -> ProgramResult {
+    let mut weight_map = BTreeMap::new();
+    let mut counted = BTreeMap::new();
+
+    for index in 0..usize::from(wallet_account.n_owners) {
+      weight_map.insert(
+        wallet_account.owners[index].pubkey.to_bytes(),
+        wallet_account.owners[index].weight
+      );
+    }
+
+    // Iterating accounts is safer then indexing
+    let accounts_iter = &mut accounts.iter();
+
+    let mut total = 0;
+    for account in accounts_iter {
+      let key = account.key.to_bytes();
+      match weight_map.get(&key) {
+        Some(weight) if account.is_signer && counted.get(&key).is_none() => {
+          total += weight;
+          counted.insert(key, true);
+        },
+        _ => {}
+      };
+    }
+
+    if total < MIN_WEIGHT {
+      info!("WalletError: Signature weight too low");
+      return Err(WalletError::InsufficientWeight.into())
+    }
 
     Ok(())
   }
@@ -138,6 +205,10 @@ impl Processor {
     let instruction = WalletInstruction::unpack(input)?;
     let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
     let is_wallet_initialized = wallet_account.is_initialized();
+
+    if is_wallet_initialized {
+      Self::check_signatures(accounts, &wallet_account)?;
+    }
 
     match instruction {
       WalletInstruction::Hello if is_wallet_initialized => {
