@@ -486,10 +486,13 @@ dependencies = [
  "arrayref",
  "bincode",
  "byteorder",
+ "num-derive",
+ "num-traits",
  "num_enum",
  "serde",
  "serde_derive",
  "solana-program",
+ "thiserror",
 ]
 
 [[package]]

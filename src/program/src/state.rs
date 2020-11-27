@@ -1,7 +1,6 @@
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use num_enum::TryFromPrimitive;
 use solana_program::{
-  info,
   pubkey::Pubkey,
   program_error::ProgramError,
   program_pack::{Pack, Sealed},
@@ -27,17 +26,15 @@ impl Pack for Account {
   const LEN: usize = ACCOUNT_SIZE;
   
   fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-    info!("FUCK1.1");
     let src = array_ref![src, 0, ACCOUNT_SIZE];
     let (state, owners_flat) =
         array_refs![src, 2, MAX_OWNERS * OWNER_SIZE];
-    info!("FUCK2");
     let mut result = Account {
       state: AccountState::try_from_primitive(state[0])
         .or(Err(ProgramError::InvalidAccountData))?,
       owners: [Owner::unpack_from_slice(&[0u8; 34])?; MAX_OWNERS],
     };
-    info!("FUCK3");
+
     for (src, dst) in owners_flat.chunks(34).zip(result.owners.iter_mut()) {
       *dst = Owner::unpack_from_slice(src)?;
     }

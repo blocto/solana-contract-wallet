@@ -1,3 +1,4 @@
+use crate::error::WalletError;
 use serde::Serialize;
 use solana_program::{
     pubkey::Pubkey,

@@ -43,7 +43,6 @@ fn process_instruction(
         return Err(ProgramError::InvalidAccountData);
     }
 
-    info!("FUCK1");
     // Increment and store the number of times the account has been greeted
     let mut stored_account = Account::unpack_unchecked(&account.data.borrow())?;
     // let mut num_greets = LittleEndian::read_u32(&data);
