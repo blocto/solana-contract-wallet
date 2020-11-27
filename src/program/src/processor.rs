@@ -1,21 +1,23 @@
 //! Program state processor
 
 use crate::{
-  state::{Account, Owner, AccountState, MIN_WEIGHT, MAX_OWNERS},
-  instruction::WalletInstruction,
   error::WalletError,
+  instruction::WalletInstruction,
+  state::{Account, Owner, AccountState, MIN_WEIGHT, MAX_OWNERS},
 };
 use solana_program::{
   account_info::{next_account_info, AccountInfo},
   entrypoint::ProgramResult,
   info,
+  instruction::{Instruction},
+  program::{invoke_signed},
   program_error::ProgramError,
   program_pack::{IsInitialized, Pack},
   pubkey::Pubkey,
 };
 use std::{
-  mem,
   collections::BTreeMap,
+  mem,
 };
 
 /// Program state handler.
@@ -28,6 +30,7 @@ impl Processor {
     Ok(())
   }
 
+  /// Process an AddOwner instruction and initialize the wallet
   fn process_initialize_wallet(
     wallet_account: &mut Account,
     pubkey: Pubkey,
@@ -48,7 +51,7 @@ impl Processor {
     Ok(())
   }
 
-  /// Process a AddOwner instruction
+  /// Process an AddOwner instruction
   fn process_add_owner(
     wallet_account: &mut Account,
     pubkey: Pubkey,
@@ -105,6 +108,21 @@ impl Processor {
 
     info!("WalletError: Cannot find the target owner to remove");
     Err(WalletError::InvalidInstruction.into())
+  }
+
+  /// Process an Invoke instruction and call another program
+  fn process_invoke(
+    accounts: &[AccountInfo],
+    instruction: Instruction,
+  ) -> ProgramResult {
+    invoke_signed(
+      &instruction,
+      accounts,
+      &[&[b"First addresses seed"],
+        &[b"Second addresses first seed", b"Second addresses second seed"]],
+    )?;
+    
+    Ok(())
   }
 
   /// Check if signatures have enought weight
@@ -231,6 +249,10 @@ impl Processor {
       WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
         info!("Instruction: RemoveOwner");
         Self::process_remove_owner(&mut wallet_account, pubkey)
+      },
+      WalletInstruction::Invoke { instruction: internal_instruction } if is_wallet_initialized => {
+        info!("Instruction: Invoke");
+        Self::process_invoke(accounts, internal_instruction)
       },
       _ => {
         info!("Invalid instruction");

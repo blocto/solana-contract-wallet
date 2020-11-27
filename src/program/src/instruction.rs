@@ -2,12 +2,16 @@
 
 use crate::error::WalletError;
 use serde::Serialize;
+use serde_json::Result as SerdeResult;
 use solana_program::{
   instruction::{AccountMeta, Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
 };
-use std::convert::TryInto;
+use std::{
+  convert::TryInto,
+  str,
+};
 
 /// Instructions supported by the multisig wallet program.
 #[repr(C)]
@@ -59,8 +63,11 @@ impl WalletInstruction {
       },
       // Invoke
       2 => {
-        let (program_id, rest) = Self::unpack_pubkey(rest)?;
-        Self::Invoke { instruction: Instruction::new(program_id, &vec!(rest), vec!())}
+        let instruction_str = str::from_utf8(rest)
+          .map_err(|_| InvalidInstruction)?;
+        let instruction: Instruction = serde_json::from_str(instruction_str)
+          .map_err(|_| InvalidInstruction)?;
+        Self::Invoke { instruction: instruction }
       }
       // Hello (testing)
       3 => Self::Hello,
