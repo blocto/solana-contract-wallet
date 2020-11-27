@@ -41,9 +41,14 @@ let payerAccount: Account;
 let programId: PublicKey;
 
 /**
- * The public key of the account we are saying hello to
+ * The public key of the wallet account
  */
 let walletPubkey: PublicKey;
+
+/**
+ * The owners of the account
+ */
+let owners: Array<Account>;
 
 const pathToProgram = 'dist/program/wallet.so';
 
@@ -122,6 +127,8 @@ export async function loadProgram(): Promise<void> {
     const config = await store.load('config.json');
     programId = new PublicKey(config.programId);
     walletPubkey = new PublicKey(config.walletPubkey);
+    const ownersRaw = JSON.parse(config.owners);
+    owners = ownersRaw.map(({ secretKey }: any) => new Account(secretKey))
     await connection.getAccountInfo(programId);
     console.log('Program already loaded to account', programId.toBase58());
     return;
@@ -144,9 +151,10 @@ export async function loadProgram(): Promise<void> {
   console.log('Program loaded to account', programId.toBase58());
 
   // Create the wallet account
+  owners = [];
   const walletAccount = new Account();
   walletPubkey = walletAccount.publicKey;
-  console.log('Creating account', walletPubkey.toBase58(), 'to say hello to');
+  console.log('Creating account', walletPubkey.toBase58(), 'to store wallet data');
   const space = walletAccountDataLayout.span;
   console.log('Account storage size', space)
   const lamports = await connection.getMinimumBalanceForRentExemption(
@@ -176,6 +184,7 @@ export async function loadProgram(): Promise<void> {
     url: urlTls,
     programId: programId.toBase58(),
     walletPubkey: walletPubkey.toBase58(),
+    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey }))),
   });
 }
 
@@ -205,6 +214,10 @@ export async function sayHello(): Promise<void> {
 export async function addOwner(): Promise<void> {
   console.log('Adding a new owner to', walletPubkey.toBase58());
   const ownerAccount = new Account();
+  owners = [
+    ...owners,
+    ownerAccount,
+  ]
 
   const instruction = Wallet.createAddOwnerTransaction(
     programId,
@@ -223,6 +236,15 @@ export async function addOwner(): Promise<void> {
       preflightCommitment: 'singleGossip',
     },
   );
+
+  // Save this info for next time
+  const store = new Store();
+  await store.save('config.json', {
+    url: urlTls,
+    programId: programId.toBase58(),
+    walletPubkey: walletPubkey.toBase58(),
+    owners: JSON.stringify(owners.map(({ secretKey }) => ({ secretKey }))),
+  });
 }
 
 /**

@@ -41,6 +41,7 @@ impl WalletInstruction {
 
     let (&tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
     Ok(match tag {
+      // AddOwner
       0 => {
         let (pubkey, rest) = Self::unpack_pubkey(rest)?;
         let weight = rest
@@ -48,16 +49,20 @@ impl WalletInstruction {
           .and_then(|slice| slice.try_into().ok())
           .map(u16::from_le_bytes)
           .ok_or(InvalidInstruction)?;
-        Self::AddOwner {
-          pubkey,
-          weight,
-        }
+
+        Self::AddOwner { pubkey, weight }
       }
-      // 1 => Self::InitializeAccount,
+      // RemoveOwner
+      1 => {
+        let (pubkey, _) = Self::unpack_pubkey(rest)?;
+        Self::RemoveOwner { pubkey }
+      },
+      // Invoke
       2 => {
         let (program_id, rest) = Self::unpack_pubkey(rest)?;
         Self::Invoke { instruction: Instruction::new(program_id, &vec!(rest), vec!())}
       }
+      // Hello (testing)
       3 => Self::Hello,
       _ => return Err(WalletError::InvalidInstruction.into()),
     })

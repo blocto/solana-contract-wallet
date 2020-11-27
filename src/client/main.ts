@@ -23,11 +23,11 @@ async function main() {
   // Load the program if not already loaded
   await loadProgram();
 
-  // Say hello to an account
-  await sayHello();
-
   // Add a new owner to the wallet account
   await addOwner();
+
+  // Say hello to an account
+  await sayHello();
 
   // Show wallet account status
   await reportWallet();

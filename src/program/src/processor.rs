@@ -1,8 +1,7 @@
 //! Program state processor
 
 use crate::{
-  state::Account,
-  state::Owner,
+  state::{Account, Owner, AccountState},
   instruction::WalletInstruction,
   error::WalletError,
 };
@@ -11,7 +10,7 @@ use solana_program::{
   entrypoint::ProgramResult,
   info,
   program_error::ProgramError,
-  program_pack::Pack,
+  program_pack::{IsInitialized, Pack},
   pubkey::Pubkey,
 };
 use std::mem;
@@ -26,16 +25,27 @@ impl Processor {
     Ok(())
   }
 
-  /// Process a AddOwner instruction
-  fn process_add_owner(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
+  fn process_initialize_wallet(
+    wallet_account: &mut Account,
     pubkey: Pubkey,
     weight: u16,
   ) -> ProgramResult {
-    let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
-    
-    // let mut num_greets = LittleEndian::read_u32(&data);
+    wallet_account.state = AccountState::Initialized;
+    wallet_account.n_owners = 1;
+    wallet_account.owners[0] = Owner {
+      pubkey: pubkey,
+      weight: weight,
+    };
+
+    Ok(())
+  }
+
+  /// Process a AddOwner instruction
+  fn process_add_owner(
+    wallet_account: &mut Account,
+    pubkey: Pubkey,
+    weight: u16,
+  ) -> ProgramResult {
     let n_owners = wallet_account.n_owners;
     wallet_account.owners[usize::from(n_owners)] = Owner {
       pubkey: pubkey,
@@ -44,7 +54,23 @@ impl Processor {
 
     wallet_account.n_owners = n_owners + 1;
 
-    Self::store_wallet_account(program_id, accounts, wallet_account)
+    Ok(())
+  }
+
+  /// Process a RemoveOwner instruction
+  fn process_remove_owner(
+    wallet_account: &mut Account,
+    pubkey: Pubkey
+  ) -> ProgramResult {
+    let n_owners = wallet_account.n_owners;
+    // wallet_account.owners[usize::from(n_owners)] = Owner {
+    //   pubkey: pubkey,
+    //   weight: weight,
+    // };
+
+    wallet_account.n_owners = n_owners - 1;
+
+    Ok(())
   }
 
   /// Load wallet account data
@@ -110,20 +136,32 @@ impl Processor {
     input: &[u8],
   ) -> ProgramResult {
     let instruction = WalletInstruction::unpack(input)?;
+    let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
+    let is_wallet_initialized = wallet_account.is_initialized();
 
     match instruction {
-      WalletInstruction::Hello => {
+      WalletInstruction::Hello if is_wallet_initialized => {
         info!("Instruction: Hello");
         Self::process_hello()
       },
-      WalletInstruction::AddOwner { pubkey, weight } => {
+      WalletInstruction::AddOwner { pubkey, weight } if !is_wallet_initialized => {
+        info!("Instruction: AddOwner (Initialize Wallet)");
+        Self::process_initialize_wallet(&mut wallet_account, pubkey, weight)
+      },
+      WalletInstruction::AddOwner { pubkey, weight } if is_wallet_initialized => {
         info!("Instruction: AddOwner");
-        Self::process_add_owner(program_id, accounts, pubkey, weight)
+        Self::process_add_owner(&mut wallet_account, pubkey, weight)
+      },
+      WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
+        info!("Instruction: RemoveOwner");
+        Self::process_remove_owner(&mut wallet_account, pubkey)
       },
       _ => {
         info!("Invalid instruction");
         Err(WalletError::InvalidInstruction.into())
       }
-    }
+    }?;
+
+    Self::store_wallet_account(program_id, accounts, wallet_account)
   }
 }
