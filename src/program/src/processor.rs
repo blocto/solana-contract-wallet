@@ -56,6 +56,11 @@ impl Processor {
   ) -> ProgramResult {
     let n_owners = wallet_account.n_owners;
 
+    if weight == 0 {
+      info!("WalletError: Key weight cannot be 0");
+      return Err(WalletError::InvalidInstruction.into())
+    }
+
     if usize::from(n_owners) >= MAX_OWNERS {
       info!("WalletError: Already too many owners");
       return Err(WalletError::InvalidInstruction.into())

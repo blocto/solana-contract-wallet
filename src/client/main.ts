@@ -25,8 +25,8 @@ async function main() {
   await loadProgram();
 
   // Add a new owner to the wallet account
-  await addOwner(1000);
-  await addOwner(100);
+  // await addOwner(1000);
+  // await addOwner(100);
 
   // Say hello to an account
   await sayHello();
