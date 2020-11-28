@@ -31,7 +31,7 @@ export class Wallet {
   ): Buffer {
     const dataLayout = BufferLayout.struct([
       BufferLayout.seq(BufferLayout.u8(), 32, 'programId'),
-      BufferLayout.u32('keysLength'),
+      BufferLayout.u16('keysLength'),
       BufferLayout.seq(AccountMetaLayout, instruction.keys.length, 'keys'),
       BufferLayout.seq(BufferLayout.u8(), instruction.data.length, 'data'),
     ]);
@@ -80,7 +80,7 @@ export class Wallet {
     let keys = signers.map(signer => ({
       pubkey: signer.publicKey,
       isSigner: true,
-      isWritable: true,
+      isWritable: false,
     }))
 
     keys = [
@@ -123,7 +123,7 @@ export class Wallet {
     let keys = signers.map(signer => ({
       pubkey: signer.publicKey,
       isSigner: true,
-      isWritable: true,
+      isWritable: false,
     }))
 
     keys = [
@@ -142,12 +142,12 @@ export class Wallet {
     });
   }
 
-  static createInvokeTransaction(
+  static async createInvokeTransaction(
     programId: PublicKey,
     walletPubkey: PublicKey,
     internalInstruction: TransactionInstruction,
     signers: Array<Account>,
-  ): TransactionInstruction {
+  ): Promise<TransactionInstruction> {
     const internalInstructionData = 
       Wallet.encodeInstruction(internalInstruction);
 
@@ -168,15 +168,36 @@ export class Wallet {
     let keys = signers.map(signer => ({
       pubkey: signer.publicKey,
       isSigner: true,
-      isWritable: true,
+      isWritable: false,
     }))
 
+    const derivedPubkey =
+      await PublicKey.createProgramAddress(
+        [walletPubkey.toBuffer()],
+        programId
+      );
+
     keys = [
+      // wallet account used
       {
         pubkey: walletPubkey,
         isSigner: false,
         isWritable: true,
       },
+      // cooresponding program account
+      {
+        pubkey: derivedPubkey,
+        isSigner: false,
+        isWritable: true,
+      },
+      // target instruction program
+      {
+        pubkey: internalInstruction.programId,
+        isSigner: false,
+        isWritable: false,
+      },
+      ...internalInstruction.keys
+        .filter(key => key.pubkey.toBase58() !== derivedPubkey.toBase58()),
       ...keys,
     ]
 
@@ -207,7 +228,7 @@ export class Wallet {
     const keys = signers.map(signer => ({
       pubkey: signer.publicKey,
       isSigner: true,
-      isWritable: true,
+      isWritable: false,
     }))
 
     return new TransactionInstruction({

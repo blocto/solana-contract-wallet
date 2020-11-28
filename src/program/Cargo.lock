@@ -508,6 +508,7 @@ version = "0.0.1"
 dependencies = [
  "arrayref",
  "bincode",
+ "bs58",
  "byteorder",
  "num-derive",
  "num-traits",

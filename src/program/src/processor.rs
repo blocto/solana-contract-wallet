@@ -115,13 +115,29 @@ impl Processor {
     accounts: &[AccountInfo],
     instruction: Instruction,
   ) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let wallet_account = next_account_info(accounts_iter)?;
+    let auth_account = next_account_info(accounts_iter)?;
+
+    let mut pass_accounts = Vec::new();
+
+    // Pass all accounts to invoke call
+    // info!(bs58::encode(wallet_account.key.to_bytes()).into_string().as_str());
+    pass_accounts.push(wallet_account.clone());
+    // info!(bs58::encode(auth_account.key.to_bytes()).into_string().as_str());
+    pass_accounts.push(auth_account.clone());
+
+    for account in accounts_iter {
+      // info!(bs58::encode(account.key.to_bytes()).into_string().as_str());
+      pass_accounts.push(account.clone());
+    }
+    
     invoke_signed(
       &instruction,
-      accounts,
-      &[&[b"First addresses seed"],
-        &[b"Second addresses first seed", b"Second addresses second seed"]],
+      pass_accounts.as_slice(),
+      &[&[&wallet_account.key.to_bytes()]],
     )?;
-    
+
     Ok(())
   }
 
@@ -171,22 +187,22 @@ impl Processor {
     // Iterating accounts is safer then indexing
     let accounts_iter = &mut accounts.iter();
 
-    // Get the account to say hello to
-    let account = next_account_info(accounts_iter)?;
+    // The account containing wallet information
+    let walllet_account = next_account_info(accounts_iter)?;
 
     // The account must be owned by the program in order to modify its data
-    if account.owner != program_id {
+    if walllet_account.owner != program_id {
       info!("Wallet account does not have the correct program id");
       return Err(ProgramError::IncorrectProgramId);
     }
 
     // The data must be large enough to hold a u64 count
-    if account.try_data_len()? < mem::size_of::<Account>() {
+    if walllet_account.try_data_len()? < mem::size_of::<Account>() {
       info!("Wallet account data length too small for Account");
       return Err(ProgramError::InvalidAccountData);
     }
 
-    Account::unpack_unchecked(&account.data.borrow())
+    Account::unpack_unchecked(&walllet_account.data.borrow())
   }
 
   /// Store wallet account data
@@ -225,13 +241,14 @@ impl Processor {
     accounts: &[AccountInfo],
     input: &[u8],
   ) -> ProgramResult {
-    let instruction = WalletInstruction::unpack(input)?;
     let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
     let is_wallet_initialized = wallet_account.is_initialized();
-
+    
     if is_wallet_initialized {
       Self::check_signatures(accounts, &wallet_account)?;
     }
+
+    let instruction = WalletInstruction::unpack(input)?;
 
     match instruction {
       WalletInstruction::Hello if is_wallet_initialized => {

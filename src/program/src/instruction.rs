@@ -3,12 +3,14 @@
 use crate::error::WalletError;
 use serde::Serialize;
 use solana_program::{
-  instruction::{Instruction},
+  info,
+  instruction::{AccountMeta, Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
 };
 use std::{
   convert::TryInto,
+  mem::size_of,
   str,
 };
 
@@ -62,16 +64,76 @@ impl WalletInstruction {
       },
       // Invoke
       2 => {
-        let instruction_str = str::from_utf8(rest)
-          .map_err(|_| InvalidInstruction)?;
-        let instruction: Instruction = serde_json::from_str(instruction_str)
-          .map_err(|_| InvalidInstruction)?;
-        Self::Invoke { instruction: instruction }
+        let (program_id, rest) = Self::unpack_pubkey(rest)?;
+        let (keys_length, mut rest) = rest.split_at(2);
+        let keys_length = keys_length
+          .try_into()
+          .ok()
+          .map(u16::from_le_bytes)
+          .ok_or(InvalidInstruction)?;
+
+        let mut accounts = Vec::new();
+        for _ in 0..usize::from(keys_length) {
+          let (pubkey, internel_rest) = Self::unpack_pubkey(rest)?;
+          let (&is_signer, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
+          let (&is_writable, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
+          rest = internel_rest;
+
+          let account_meta = AccountMeta {
+            pubkey: pubkey,
+            is_signer: is_signer == true as u8,
+            is_writable: is_writable == true as u8,
+          };
+
+          info!(bs58::encode(pubkey.to_bytes()).into_string().as_str());
+
+          accounts.push(account_meta);
+        }
+
+        Self::Invoke { instruction: Instruction {
+          program_id: program_id,
+          accounts: accounts,
+          data: rest.iter().cloned().collect(),
+        }}
       }
       // Hello (testing)
       3 => Self::Hello,
       _ => return Err(WalletError::InvalidInstruction.into()),
     })
+  }
+
+  /// Packs a WalletInstruction into a byte buffer.
+  pub fn pack(&self) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(size_of::<Self>());
+
+    match self {
+      &Self::AddOwner {
+        ref pubkey,
+        weight,
+      } => {
+        buf.push(0);
+        buf.extend_from_slice(pubkey.as_ref());
+        buf.extend_from_slice(&weight.to_le_bytes());
+      },
+      &Self::RemoveOwner {
+        ref pubkey,
+      } => {
+        buf.push(1);
+        buf.extend_from_slice(pubkey.as_ref());
+      }
+      &Self::Invoke {
+        ref instruction,
+      } => {
+        buf.push(2);
+        buf.extend_from_slice(instruction.program_id.as_ref());
+        // TODO: Complete invoke instruction packing
+      }
+      &Self::Hello => {
+        buf.push(3);
+      },
+    }
+
+    buf
   }
 
   fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
