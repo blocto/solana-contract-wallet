@@ -6,9 +6,9 @@ import {
   establishConnection,
   establishPayer,
   loadProgram,
-  addOwner,
-  addContractWalletAsOwner,
-  removeOwner,
+  // addWallet1Owner,
+  // addContractWalletAsOwner,
+  // removeOwner,
   sayHello,
   sayHelloWithContractWallet,
   reportWallets,
@@ -27,8 +27,8 @@ async function main() {
   await loadProgram();
 
   // Add a new owner to the normal wallet account
-  // await addOwner(1000);
-  // await addOwner(100);
+  // await addWallet1Owner(1000);
+  // await addWallet1Owner(100);
 
   // Add a normal wallet as owner of the contract controlled wallet account
   // await addContractWalletAsOwner();
@@ -43,13 +43,13 @@ async function main() {
   await sayHelloWithContractWallet();
 
   // Show wallet account status
-  await reportWallets();
+  // await reportWallets();
 
   // Remove an owner from the wallet account
-  await removeOwner(1);
+  // await removeOwner(1);
 
   // Show wallet account status
-  await reportWallets();
+  // await reportWallets();
 
   console.log('Success');
 }

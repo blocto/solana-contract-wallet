@@ -245,9 +245,11 @@ export async function loadProgram(): Promise<void> {
   console.log('Accounts created');
 
   // Initialize wallet 1
-  await addOwner(1000);
+  await addWallet1Owner(1000);
 
   // Initialize wallet 2
+  await addWallet2Owner(1000);
+  await addWallet2Owner(500);
   await addContractWalletAsOwner();
 
   await storeCurrentData();
@@ -279,7 +281,7 @@ export async function sayHello(): Promise<void> {
 /**
  * Add new owner
  */
-export async function addOwner(weight: number): Promise<void> {
+export async function addWallet1Owner(weight: number): Promise<void> {
   const signers = owners.length ? [owners[0]] : [];
 
   console.log('Adding a new owner to', walletPubkey.toBase58());
@@ -310,25 +312,58 @@ export async function addOwner(weight: number): Promise<void> {
   await storeCurrentData();
 }
 
+export async function addWallet2Owner(weight: number): Promise<void> {
+  const signers = owners.length > 1 ? [owners[1]] : [];
+
+  console.log('Adding a new owner to', wallet2Pubkey.toBase58());
+  const newOwnerAccount = new Account();
+  owners = [
+    ...owners,
+    newOwnerAccount,
+  ]
+
+  const instruction = Wallet.createAddOwnerTransaction(
+    programId,
+    wallet2Pubkey,
+    newOwnerAccount.publicKey,
+    weight,
+    signers,
+  );
+
+  await sendAndConfirmTransaction(
+    connection,
+    new Transaction().add(instruction),
+    [payerAccount, ...signers],
+    {
+      commitment: 'singleGossip',
+      preflightCommitment: 'singleGossip',
+    },
+  );
+
+  await storeCurrentData();
+}
+
 
 /**
  * Add new owner
  */
 export async function addContractWalletAsOwner(): Promise<void> {
+  const signers = owners.length > 1 ? [owners[1]] : [];
+
   console.log('Adding a new owner to', wallet2Pubkey.toBase58());
 
   const instruction = Wallet.createAddOwnerTransaction(
     programId,
     wallet2Pubkey,
     programAddress,
-    1000,
-    [],
+    500,
+    signers,
   );
 
   await sendAndConfirmTransaction(
     connection,
     new Transaction().add(instruction),
-    [payerAccount],
+    [payerAccount, ...signers],
     {
       commitment: 'singleGossip',
       preflightCommitment: 'singleGossip',
@@ -382,7 +417,7 @@ export async function removeOwner(index: number): Promise<void> {
  * Say hello with contract wallet
  */
 export async function sayHelloWithContractWallet(): Promise<void> {
-  const signers = owners.length ? [owners[0]] : [];
+  const signers = owners.length ? [owners[0], owners[2]] : [];
 
   console.log(`Saying hello to ${wallet2Pubkey.toBase58()} with contract wallet`);
   const internalTransaction = Wallet.createHelloTransaction(
@@ -391,7 +426,7 @@ export async function sayHelloWithContractWallet(): Promise<void> {
     [{
       publicKey: programAddress,
       secretKey: programAddress.toBuffer(), // fake, not used
-    }],
+    }, ...signers],
   );
   const transaction = await Wallet.createInvokeTransaction(
     programId,
