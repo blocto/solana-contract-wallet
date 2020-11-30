@@ -36,6 +36,4 @@ script:
   - npm run localnet:update
   - npm run localnet:up
   - npm run start
-  - npm run build:program-c
-  - npm run start
   - npm run localnet:down
