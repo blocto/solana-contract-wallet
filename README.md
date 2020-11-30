@@ -1,8 +1,8 @@
 [![Build status][travis-image]][travis-url]
 [![Gitpod Ready-to-Code](https://img.shields.io/badge/Gitpod-Ready--to--Code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/portto/solana-contract-wallet)
 
-[travis-image]: https://travis-ci.org/solana-labs/example-helloworld.svg?branch=master
-[travis-url]: https://travis-ci.org/solana-labs/example-helloworld
+[travis-image]: https://travis-ci.org/portto/solana-contract-wallet.svg?branch=master
+[travis-url]: https://travis-ci.org/portto/solana-contract-wallet
 
 # Solana Multi-Sig Wallet Program
 
