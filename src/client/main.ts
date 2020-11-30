@@ -15,7 +15,7 @@ import {
 } from './wallet_test';
 
 async function main() {
-  console.log("Let's say hello to a Solana account...");
+  console.log('Try deploy a multi-sig wallet and perform tests...');
 
   // Establish connection to the cluster
   await establishConnection();
@@ -32,7 +32,7 @@ async function main() {
 
   // Add a normal wallet as owner of the contract controlled wallet account
   // await addContractWalletAsOwner();
-  
+
   // Show wallet account status
   await reportWallets();
 

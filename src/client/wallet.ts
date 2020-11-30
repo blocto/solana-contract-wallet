@@ -6,11 +6,7 @@
 // @ts-ignore
 import * as BufferLayout from 'buffer-layout';
 
-import {
-  Account,
-  PublicKey,
-  TransactionInstruction,
-} from '@solana/web3.js';
+import {Account, PublicKey, TransactionInstruction} from '@solana/web3.js';
 
 export enum Instruction {
   AddOwner = 0,
@@ -22,13 +18,11 @@ export enum Instruction {
 const AccountMetaLayout = BufferLayout.struct([
   BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
   BufferLayout.u8('isSigner'),
-  BufferLayout.u8('isWritable')
+  BufferLayout.u8('isWritable'),
 ]);
 
 export class Wallet {
-  static encodeInstruction(
-    instruction: TransactionInstruction
-  ): Buffer {
+  static encodeInstruction(instruction: TransactionInstruction): Buffer {
     const dataLayout = BufferLayout.struct([
       BufferLayout.seq(BufferLayout.u8(), 32, 'programId'),
       BufferLayout.u16('keysLength'),
@@ -81,7 +75,7 @@ export class Wallet {
       pubkey: signer.publicKey,
       isSigner: true,
       isWritable: false,
-    }))
+    }));
 
     keys = [
       {
@@ -90,7 +84,7 @@ export class Wallet {
         isWritable: true,
       },
       ...keys,
-    ]
+    ];
 
     return new TransactionInstruction({
       keys,
@@ -124,7 +118,7 @@ export class Wallet {
       pubkey: signer.publicKey,
       isSigner: true,
       isWritable: false,
-    }))
+    }));
 
     keys = [
       {
@@ -133,7 +127,7 @@ export class Wallet {
         isWritable: true,
       },
       ...keys,
-    ]
+    ];
 
     return new TransactionInstruction({
       keys,
@@ -148,12 +142,17 @@ export class Wallet {
     internalInstruction: TransactionInstruction,
     signers: Array<Account>,
   ): Promise<TransactionInstruction> {
-    const internalInstructionData = 
-      Wallet.encodeInstruction(internalInstruction);
+    const internalInstructionData = Wallet.encodeInstruction(
+      internalInstruction,
+    );
 
     const dataLayout = BufferLayout.struct([
       BufferLayout.u8('instruction'),
-      BufferLayout.seq(BufferLayout.u8(), internalInstructionData.length, 'data'),
+      BufferLayout.seq(
+        BufferLayout.u8(),
+        internalInstructionData.length,
+        'data',
+      ),
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -169,13 +168,12 @@ export class Wallet {
       pubkey: signer.publicKey,
       isSigner: true,
       isWritable: false,
-    }))
+    }));
 
-    const derivedPubkey =
-      await PublicKey.createProgramAddress(
-        [walletPubkey.toBuffer()],
-        programId
-      );
+    const derivedPubkey = await PublicKey.createProgramAddress(
+      [walletPubkey.toBuffer()],
+      programId,
+    );
 
     keys = [
       // wallet account used
@@ -196,10 +194,11 @@ export class Wallet {
         isSigner: false,
         isWritable: false,
       },
-      ...internalInstruction.keys
-        .filter(key => key.pubkey.toBase58() !== derivedPubkey.toBase58()),
+      ...internalInstruction.keys.filter(
+        key => key.pubkey.toBase58() !== derivedPubkey.toBase58(),
+      ),
       ...keys,
-    ]
+    ];
 
     return new TransactionInstruction({
       keys,
@@ -213,9 +212,7 @@ export class Wallet {
     walletPubkey: PublicKey,
     signers: Array<Account>,
   ): TransactionInstruction {
-    const dataLayout = BufferLayout.struct([
-      BufferLayout.u8('instruction')
-    ]);
+    const dataLayout = BufferLayout.struct([BufferLayout.u8('instruction')]);
 
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
@@ -229,10 +226,13 @@ export class Wallet {
       pubkey: signer.publicKey,
       isSigner: true,
       isWritable: false,
-    }))
+    }));
 
     return new TransactionInstruction({
-      keys: [{pubkey: walletPubkey, isSigner: false, isWritable: true}, ...keys],
+      keys: [
+        {pubkey: walletPubkey, isSigner: false, isWritable: true},
+        ...keys,
+      ],
       programId,
       data,
     });
