@@ -16,7 +16,7 @@
     "lint:fix": "eslint --ext .ts src/client/* --fix && prettier --write \"src/client/**/*.ts\"",
     "bpf-sdk:update": "solana-bpf-sdk-install node_modules/@solana/web3.js && npm run clean",
     "clean:store": "rm -rf src/client/util/store/config.json",
-    "build": "cargo build-bpf --manifest-path=./src/program/Cargo.toml --bpf-out-dir=dist/program && mv dist/program/solana_contract_wallet.so dist/program/wallet.so && npm run clean:store",
+    "build:program": "cargo build-bpf --manifest-path=./src/program/Cargo.toml --bpf-out-dir=dist/program && mv dist/program/solana_contract_wallet.so dist/program/wallet.so && npm run clean:store",
     "clean": "cargo clean --manifest-path=./src/program/Cargo.toml && rm -rf ./dist && npm run clean:store",
     "test": "cargo test-bpf --manifest-path=./src/program/Cargo.toml",
     "cluster:localnet": "npm run clean:store && rm -f .env",
@@ -28,7 +28,7 @@
     "localnet:down": "solana-localnet down",
     "localnet:logs": "solana-localnet logs -f",
     "pretty": "prettier --write '{,src/**/}*.js'",
-    "postinstall": "npm run bpf-sdk:update && cargo update --manifest-path=src/program-rust/Cargo.toml"
+    "postinstall": "npm run bpf-sdk:update && cargo update --manifest-path=src/program/Cargo.toml"
   },
   "devDependencies": {
     "@tsconfig/recommended": "^1.0.1",
