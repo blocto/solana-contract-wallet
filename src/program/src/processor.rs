@@ -3,22 +3,19 @@
 use crate::{
   error::WalletError,
   instruction::WalletInstruction,
-  state::{Account, Owner, AccountState, MIN_WEIGHT, MAX_OWNERS},
+  state::{Account, AccountState, MAX_OWNERS, MIN_WEIGHT},
 };
 use solana_program::{
   account_info::{next_account_info, AccountInfo},
   entrypoint::ProgramResult,
   info,
-  instruction::{Instruction},
-  program::{invoke_signed},
+  instruction::Instruction,
+  program::invoke_signed,
   program_error::ProgramError,
   program_pack::{IsInitialized, Pack},
   pubkey::Pubkey,
 };
-use std::{
-  collections::BTreeMap,
-  mem,
-};
+use std::{collections::BTreeMap, mem};
 
 /// Program state handler.
 pub struct Processor {}
@@ -38,83 +35,52 @@ impl Processor {
   ) -> ProgramResult {
     if weight < MIN_WEIGHT {
       info!("WalletError: Initial key weight too low");
-      return Err(WalletError::InvalidInstruction.into())
+      return Err(WalletError::InvalidInstruction.into());
     }
 
     wallet_account.state = AccountState::Initialized;
-    wallet_account.n_owners = 1;
-    wallet_account.owners[0] = Owner {
-      pubkey: pubkey,
-      weight: weight,
-    };
+    wallet_account.owners.insert(pubkey, weight);
 
     Ok(())
   }
 
   /// Process an AddOwner instruction
-  fn process_add_owner(
-    wallet_account: &mut Account,
-    pubkey: Pubkey,
-    weight: u16,
-  ) -> ProgramResult {
-    let n_owners = wallet_account.n_owners;
-
+  fn process_add_owner(wallet_account: &mut Account, pubkey: Pubkey, weight: u16) -> ProgramResult {
     if weight == 0 {
       info!("WalletError: Key weight cannot be 0");
-      return Err(WalletError::InvalidInstruction.into())
+      return Err(WalletError::InvalidInstruction.into());
     }
 
-    if usize::from(n_owners) >= MAX_OWNERS {
+    if wallet_account.owners.len() >= MAX_OWNERS {
       info!("WalletError: Already too many owners");
-      return Err(WalletError::InvalidInstruction.into())
+      return Err(WalletError::InvalidInstruction.into());
     }
 
-    for index in 0..usize::from(n_owners) {
-      if wallet_account.owners[index].pubkey.to_bytes() == pubkey.to_bytes() {
-        info!("WalletError: Owner already exists");
-        return Err(WalletError::InvalidInstruction.into())
-      }
+    if wallet_account.owners.contains_key(&pubkey) {
+      info!("WalletError: Owner already exists");
+      return Err(WalletError::InvalidInstruction.into());
     }
 
-    wallet_account.owners[usize::from(n_owners)] = Owner {
-      pubkey: pubkey,
-      weight: weight,
-    };
-
-    wallet_account.n_owners = n_owners + 1;
+    wallet_account.owners.insert(pubkey, weight);
 
     Ok(())
   }
 
   /// Process a RemoveOwner instruction
-  fn process_remove_owner(
-    wallet_account: &mut Account,
-    pubkey: Pubkey
-  ) -> ProgramResult {
-    let n_owners = wallet_account.n_owners;
-
-    for index in 0..usize::from(n_owners) {
-      if wallet_account.owners[index].pubkey.to_bytes() == pubkey.to_bytes() {
-        // Swap current item with the last item and remove the last item
-        wallet_account.owners[index] = wallet_account.owners[usize::from(n_owners) - 1];
-        wallet_account.owners[usize::from(n_owners) - 1] = Owner {
-          pubkey: Pubkey::new_from_array([0; 32]),
-          weight: 0,
-        };
-        wallet_account.n_owners = n_owners - 1;
-        return Ok(())
-      }
+  fn process_remove_owner(wallet_account: &mut Account, pubkey: Pubkey) -> ProgramResult {
+    // check target exist
+    if !wallet_account.owners.contains_key(&pubkey) {
+      info!("WalletError: Cannot find the target owner to remove");
+      return Err(WalletError::InvalidInstruction.into());
     }
 
-    info!("WalletError: Cannot find the target owner to remove");
-    Err(WalletError::InvalidInstruction.into())
+    // remove
+    wallet_account.owners.remove(&pubkey);
+    Ok(())
   }
 
   /// Process an Invoke instruction and call another program
-  fn process_invoke(
-    accounts: &[AccountInfo],
-    instruction: Instruction,
-  ) -> ProgramResult {
+  fn process_invoke(accounts: &[AccountInfo], instruction: Instruction) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let wallet_account = next_account_info(accounts_iter)?;
     let auth_account = next_account_info(accounts_iter)?;
@@ -131,7 +97,7 @@ impl Processor {
       // info!(bs58::encode(account.key.to_bytes()).into_string().as_str());
       pass_accounts.push(account.clone());
     }
-    
+
     invoke_signed(
       &instruction,
       pass_accounts.as_slice(),
@@ -142,38 +108,20 @@ impl Processor {
   }
 
   /// Check if signatures have enought weight
-  fn check_signatures(
-    accounts: &[AccountInfo],
-    wallet_account: &Account,
-  ) -> ProgramResult {
-    let mut weight_map = BTreeMap::new();
+  fn check_signatures(accounts: &[AccountInfo], wallet_account: &Account) -> ProgramResult {
+    let mut total_key_weight = 0;
     let mut counted = BTreeMap::new();
 
-    for index in 0..usize::from(wallet_account.n_owners) {
-      weight_map.insert(
-        wallet_account.owners[index].pubkey.to_bytes(),
-        wallet_account.owners[index].weight
-      );
+    for account in accounts.iter() {
+      if account.is_signer && wallet_account.owners.contains_key(account.key) && !counted.contains_key(account.key) {
+        counted.insert(account.key, true);
+        total_key_weight += wallet_account.owners[account.key];
+      }
     }
 
-    // Iterating accounts is safer then indexing
-    let accounts_iter = &mut accounts.iter();
-
-    let mut total = 0;
-    for account in accounts_iter {
-      let key = account.key.to_bytes();
-      match weight_map.get(&key) {
-        Some(weight) if account.is_signer && counted.get(&key).is_none() => {
-          total += weight;
-          counted.insert(key, true);
-        },
-        _ => {}
-      };
-    }
-
-    if total < MIN_WEIGHT {
+    if total_key_weight < MIN_WEIGHT {
       info!("WalletError: Signature weight too low");
-      return Err(WalletError::InsufficientWeight.into())
+      return Err(WalletError::InsufficientWeight.into());
     }
 
     Ok(())
@@ -211,7 +159,6 @@ impl Processor {
     accounts: &[AccountInfo],
     wallet_account: Account,
   ) -> Result<(), ProgramError> {
-
     // Iterating accounts is safer then indexing
     let accounts_iter = &mut accounts.iter();
 
@@ -236,14 +183,10 @@ impl Processor {
   }
 
   /// Process a WalletInstruction
-  pub fn process(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    input: &[u8],
-  ) -> ProgramResult {
+  pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
     let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
     let is_wallet_initialized = wallet_account.is_initialized();
-    
+
     if is_wallet_initialized {
       Self::check_signatures(accounts, &wallet_account)?;
     }
@@ -254,23 +197,25 @@ impl Processor {
       WalletInstruction::Hello if is_wallet_initialized => {
         info!("Instruction: Hello");
         Self::process_hello()
-      },
+      }
       WalletInstruction::AddOwner { pubkey, weight } if !is_wallet_initialized => {
         info!("Instruction: AddOwner (Initialize Wallet)");
         Self::process_initialize_wallet(&mut wallet_account, pubkey, weight)
-      },
+      }
       WalletInstruction::AddOwner { pubkey, weight } if is_wallet_initialized => {
         info!("Instruction: AddOwner");
         Self::process_add_owner(&mut wallet_account, pubkey, weight)
-      },
+      }
       WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
         info!("Instruction: RemoveOwner");
         Self::process_remove_owner(&mut wallet_account, pubkey)
-      },
-      WalletInstruction::Invoke { instruction: internal_instruction } if is_wallet_initialized => {
+      }
+      WalletInstruction::Invoke {
+        instruction: internal_instruction,
+      } if is_wallet_initialized => {
         info!("Instruction: Invoke");
         Self::process_invoke(accounts, internal_instruction)
-      },
+      }
       _ => {
         info!("Invalid instruction");
         Err(WalletError::InvalidInstruction.into())
