@@ -35,6 +35,11 @@ pub enum WalletInstruction {
     /// The instruction for the wallet to invoke
     instruction: Instruction
   },
+  /// Recovery can reset all your account owners
+  Recovery {
+    /// public key => key weight
+    owners: BTreeMap<Pubkey, u16>,
+  },
   /// Say hello
   Hello,
 }
@@ -62,8 +67,19 @@ impl WalletInstruction {
         let (pubkey, _) = Self::unpack_pubkey(rest)?;
         Self::RemoveOwner { pubkey }
       },
-      // Invoke
+      // Recovery
       2 => {
+        let mut current = 0;
+        let mut owners = BTreeMap::new();
+        while current < rest.len() {
+          let pubkey = read_pubkey(&mut current, rest).unwrap();
+          let weight = read_u16(&mut current, rest).unwrap();
+          owners.insert(pubkey, weight);
+        }
+        Self::Recovery {owners: owners}
+      },
+      // Invoke
+      3 => {
         let (program_id, rest) = Self::unpack_pubkey(rest)?;
         let (keys_length, mut rest) = rest.split_at(2);
         let keys_length = keys_length
@@ -97,7 +113,7 @@ impl WalletInstruction {
         }}
       }
       // Hello (testing)
-      3 => Self::Hello,
+      4 => Self::Hello,
       _ => return Err(WalletError::InvalidInstruction.into()),
     })
   }
@@ -119,15 +135,21 @@ impl WalletInstruction {
         buf.push(1);
         buf.extend_from_slice(pubkey.as_ref());
       }
+      &Self::Recovery {
+        owners: _,
+      } => {
+        buf.push(2)
+        // TODO
+      }
       &Self::Invoke {
         ref instruction,
       } => {
-        buf.push(2);
+        buf.push(3);
         buf.extend_from_slice(instruction.program_id.as_ref());
         // TODO: Complete invoke instruction packing
       }
       &Self::Hello => {
-        buf.push(3);
+        buf.push(4);
       },
     }
 

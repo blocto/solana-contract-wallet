@@ -79,6 +79,33 @@ impl Processor {
     Ok(())
   }
 
+  /// Process an Recovery instruction
+  fn process_recovery(
+    wallet_account: &mut Account,
+    owners: BTreeMap<Pubkey, u16>,
+  ) -> ProgramResult {
+    if owners.len() > MAX_OWNERS {
+      info!("WalletError: too many owners");
+      return Err(WalletError::InvalidInstruction.into());
+    }
+
+    wallet_account.owners.clear();
+
+    for (pubkey, weight) in owners {
+      if weight == 0 {
+        info!("WalletError: Key weight cannot be 0");
+        return Err(WalletError::InvalidInstruction.into());
+      }
+      if wallet_account.owners.contains_key(&pubkey) {
+        info!("WalletError: Owner already exists");
+        return Err(WalletError::InvalidInstruction.into());
+      }
+      wallet_account.owners.insert(pubkey, weight);
+    }
+
+    Ok(())
+  }
+
   /// Process an Invoke instruction and call another program
   fn process_invoke(accounts: &[AccountInfo], instruction: Instruction) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
@@ -210,6 +237,10 @@ impl Processor {
         info!("Instruction: RemoveOwner");
         Self::process_remove_owner(&mut wallet_account, pubkey)
       }
+      WalletInstruction::Recovery { owners } if is_wallet_initialized => {
+        info!("Instruction: Recovery");
+        Self::process_recovery(&mut wallet_account, owners)
+      }
       WalletInstruction::Invoke {
         instruction: internal_instruction,
       } if is_wallet_initialized => {
@@ -282,6 +313,33 @@ mod test {
     };
     expected_account.owners.insert(pubkey1, 999);
     expected_account.owners.insert(pubkey2, 1);
+
+    assert_eq!(wallet_account, expected_account);
+  }
+
+  #[test]
+  fn test_process_recovery() {
+    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
+    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
+
+    let mut wallet_account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::new(),
+    };
+    wallet_account.owners.insert(pubkey1, 1000);
+
+    let mut recovery_keys = BTreeMap::new();
+    recovery_keys.insert(pubkey2, 1000);
+    assert_eq!(
+      Processor::process_recovery(&mut wallet_account, recovery_keys),
+      Ok(())
+    );
+
+    let mut expected_account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::<Pubkey, u16>::new(),
+    };
+    expected_account.owners.insert(pubkey2, 1000);
 
     assert_eq!(wallet_account, expected_account);
   }
