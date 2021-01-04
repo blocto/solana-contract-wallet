@@ -30,38 +30,38 @@ impl Processor {
   /// Process an AddOwner instruction and initialize the wallet
   fn process_initialize_wallet(
     wallet_account: &mut Account,
-    pubkey: Pubkey,
-    weight: u16,
+    owners: BTreeMap<Pubkey, u16>,
   ) -> ProgramResult {
-    if weight < MIN_WEIGHT {
-      info!("WalletError: Initial key weight too low");
-      return Err(WalletError::InvalidInstruction.into());
-    }
-
     wallet_account.state = AccountState::Initialized;
-    wallet_account.owners.insert(pubkey, weight);
+
+    for (pubkey, weight) in owners {
+      wallet_account.owners.insert(pubkey, weight);
+    }
 
     Ok(())
   }
 
   /// Process an AddOwner instruction
-  fn process_add_owner(wallet_account: &mut Account, pubkey: Pubkey, weight: u16) -> ProgramResult {
-    if weight == 0 {
-      info!("WalletError: Key weight cannot be 0");
+  fn process_add_owner(
+    wallet_account: &mut Account,
+    owners: BTreeMap<Pubkey, u16>,
+  ) -> ProgramResult {
+    if wallet_account.owners.len() + owners.len() > MAX_OWNERS {
+      info!("WalletError: too many owners");
       return Err(WalletError::InvalidInstruction.into());
     }
 
-    if wallet_account.owners.len() >= MAX_OWNERS {
-      info!("WalletError: Already too many owners");
-      return Err(WalletError::InvalidInstruction.into());
+    for (pubkey, weight) in owners {
+      if weight == 0 {
+        info!("WalletError: Key weight cannot be 0");
+        return Err(WalletError::InvalidInstruction.into());
+      }
+      if wallet_account.owners.contains_key(&pubkey) {
+        info!("WalletError: Owner already exists");
+        return Err(WalletError::InvalidInstruction.into());
+      }
+      wallet_account.owners.insert(pubkey, weight);
     }
-
-    if wallet_account.owners.contains_key(&pubkey) {
-      info!("WalletError: Owner already exists");
-      return Err(WalletError::InvalidInstruction.into());
-    }
-
-    wallet_account.owners.insert(pubkey, weight);
 
     Ok(())
   }
@@ -198,13 +198,13 @@ impl Processor {
         info!("Instruction: Hello");
         Self::process_hello()
       }
-      WalletInstruction::AddOwner { pubkey, weight } if !is_wallet_initialized => {
+      WalletInstruction::AddOwner { owners } if !is_wallet_initialized => {
         info!("Instruction: AddOwner (Initialize Wallet)");
-        Self::process_initialize_wallet(&mut wallet_account, pubkey, weight)
+        Self::process_initialize_wallet(&mut wallet_account, owners)
       }
-      WalletInstruction::AddOwner { pubkey, weight } if is_wallet_initialized => {
+      WalletInstruction::AddOwner { owners } if is_wallet_initialized => {
         info!("Instruction: AddOwner");
-        Self::process_add_owner(&mut wallet_account, pubkey, weight)
+        Self::process_add_owner(&mut wallet_account, owners)
       }
       WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
         info!("Instruction: RemoveOwner");
@@ -223,5 +223,66 @@ impl Processor {
     }?;
 
     Self::store_wallet_account(program_id, accounts, wallet_account)
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::*;
+  use std::str::FromStr;
+
+  #[test]
+  fn test_process_initialize_wallet() {
+    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
+    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
+
+    let mut wallet_account = Account {
+      state: AccountState::Uninitialized,
+      owners: BTreeMap::new(),
+    };
+    let mut init_keys = BTreeMap::new();
+    init_keys.insert(pubkey1, 999);
+    init_keys.insert(pubkey2, 1);
+    assert_eq!(
+      Processor::process_initialize_wallet(&mut wallet_account, init_keys),
+      Ok(())
+    );
+
+    let mut expected_account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::<Pubkey, u16>::new(),
+    };
+    expected_account.owners.insert(pubkey1, 999);
+    expected_account.owners.insert(pubkey2, 1);
+
+    assert_eq!(wallet_account, expected_account);
+  }
+
+  #[test]
+  fn test_process_add_owner() {
+    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
+    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
+
+    let mut wallet_account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::new(),
+    };
+    wallet_account.owners.insert(pubkey1, 999);
+
+    let mut add_keys = BTreeMap::new();
+    add_keys.insert(pubkey2, 1);
+    assert_eq!(
+      Processor::process_add_owner(&mut wallet_account, add_keys),
+      Ok(())
+    );
+
+    let mut expected_account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::<Pubkey, u16>::new(),
+    };
+    expected_account.owners.insert(pubkey1, 999);
+    expected_account.owners.insert(pubkey2, 1);
+
+    assert_eq!(wallet_account, expected_account);
   }
 }

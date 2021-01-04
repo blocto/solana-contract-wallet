@@ -7,11 +7,13 @@ use solana_program::{
   instruction::{AccountMeta, Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
+  serialize_utils::{read_pubkey, read_u16},
 };
 use std::{
   convert::TryInto,
   mem::size_of,
   str,
+  collections::BTreeMap,
 };
 
 /// Instructions supported by the multisig wallet program.
@@ -20,10 +22,8 @@ use std::{
 pub enum WalletInstruction {
   /// Add a Pubkey to owner list
   AddOwner {
-    /// The public key to add to the owner list
-    pubkey: Pubkey,
-    /// Weight of the public key (0-1000)
-    weight: u16,
+    /// public key => key weight
+    owners: BTreeMap<Pubkey, u16>,
   },
   /// Remove a Pubkey from owner list
   RemoveOwner {
@@ -48,14 +48,14 @@ impl WalletInstruction {
     Ok(match tag {
       // AddOwner
       0 => {
-        let (pubkey, rest) = Self::unpack_pubkey(rest)?;
-        let weight = rest
-          .get(..2)
-          .and_then(|slice| slice.try_into().ok())
-          .map(u16::from_le_bytes)
-          .ok_or(InvalidInstruction)?;
-
-        Self::AddOwner { pubkey, weight }
+        let mut current = 0;
+        let mut owners = BTreeMap::new();
+        while current < rest.len() {
+          let pubkey = read_pubkey(&mut current, rest).unwrap();
+          let weight = read_u16(&mut current, rest).unwrap();
+          owners.insert(pubkey, weight);
+        }
+        Self::AddOwner {owners: owners}
       }
       // RemoveOwner
       1 => {
@@ -108,12 +108,10 @@ impl WalletInstruction {
 
     match self {
       &Self::AddOwner {
-        ref pubkey,
-        weight,
+        owners: _,
       } => {
         buf.push(0);
-        buf.extend_from_slice(pubkey.as_ref());
-        buf.extend_from_slice(&weight.to_le_bytes());
+        // TODO
       },
       &Self::RemoveOwner {
         ref pubkey,
