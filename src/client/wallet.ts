@@ -11,6 +11,7 @@ import {Account, PublicKey, TransactionInstruction} from '@solana/web3.js';
 export enum Instruction {
   AddOwner = 0,
   RemoveOwner,
+  Recovery,
   Invoke,
   Hello,
 }

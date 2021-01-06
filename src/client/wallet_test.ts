@@ -66,7 +66,6 @@ const pathToProgram = 'dist/program/wallet.so';
  */
 const walletAccountDataLayout = BufferLayout.struct([
   BufferLayout.u8('state'),
-  BufferLayout.u8('n_owners'),
   BufferLayout.seq(
     BufferLayout.struct([
       BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
@@ -469,34 +468,22 @@ export async function sayHelloWithContractWallet(): Promise<void> {
 /**
  * Report the number of times the greeted account has been said hello to
  */
-export async function reportWallet(): Promise<void> {
+export async function reportWallet(walletPubkey: PublicKey): Promise<void> {
   const accountInfo = await connection.getAccountInfo(walletPubkey);
   if (accountInfo === null) {
     throw 'Error: cannot find the wallet account';
   }
   const info = walletAccountDataLayout.decode(Buffer.from(accountInfo.data));
 
-  console.log(`number of ${walletPubkey.toBase58()} owners: `, info.n_owners);
+  console.log(
+    `number of ${walletPubkey.toBase58()} owners: `,
+    info.owners.length,
+  );
 
-  for (let i = 0; i < info.n_owners; i++) {
-    console.log(
-      `key #${i}: {\n`,
-      `pubkey: ${new PublicKey(info.owners[i].pubkey).toBase58()}\n`,
-      `weight: ${String(info.owners[i].weight)}\n}`,
-    );
-  }
-}
-
-export async function reportWallet2(): Promise<void> {
-  const accountInfo = await connection.getAccountInfo(wallet2Pubkey);
-  if (accountInfo === null) {
-    throw 'Error: cannot find the wallet account';
-  }
-  const info = walletAccountDataLayout.decode(Buffer.from(accountInfo.data));
-
-  console.log(`number of ${wallet2Pubkey.toBase58()} owners: `, info.n_owners);
-
-  for (let i = 0; i < info.n_owners; i++) {
+  for (let i = 0; i < info.owners.length; i++) {
+    if (info.owners[i].weight == 0) {
+      break;
+    }
     console.log(
       `key #${i}: {\n`,
       `pubkey: ${new PublicKey(info.owners[i].pubkey).toBase58()}\n`,
@@ -506,6 +493,6 @@ export async function reportWallet2(): Promise<void> {
 }
 
 export async function reportWallets(): Promise<void> {
-  await reportWallet();
-  await reportWallet2();
+  await reportWallet(walletPubkey);
+  await reportWallet(wallet2Pubkey);
 }

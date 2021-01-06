@@ -1,13 +1,14 @@
 //! State transition types
-
-use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use arrayref::{array_mut_ref, mut_array_refs};
 use num_enum::TryFromPrimitive;
 use solana_program::{
-  pubkey::Pubkey,
   program_error::ProgramError,
   program_pack::{IsInitialized, Pack, Sealed},
+  pubkey::Pubkey,
+  serialize_utils::{read_pubkey, read_u16, read_u8},
 };
-use std::mem;
+
+use std::collections::BTreeMap;
 
 /// Maximum signature weight for instructions
 pub const MIN_WEIGHT: u16 = 1000;
@@ -15,60 +16,62 @@ pub const MIN_WEIGHT: u16 = 1000;
 /// Maximum number of multisignature owners
 pub const MAX_OWNERS: usize = 11;
 
-/// Memory size of each multisig owner
-const OWNER_SIZE: usize = mem::size_of::<Owner>();
-
-/// Memory size of account
-const ACCOUNT_SIZE: usize = mem::size_of::<Account>();
-
 /// Account data.
 #[repr(C)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Account {
   /// The account's state
   pub state: AccountState,
-
-  /// Number of current owners
-  pub n_owners: u8,
-
-  /// The owners of this account.
-  pub owners: [Owner; MAX_OWNERS],
+  /// owners is a map (public key => weight)
+  pub owners: BTreeMap<Pubkey, u16>,
 }
 
 impl Pack for Account {
-  const LEN: usize = ACCOUNT_SIZE;
-  
-  fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-    let src = array_ref![src, 0, ACCOUNT_SIZE];
-    let (state, n_owners, owners_flat) =
-      array_refs![src, 1, 1, MAX_OWNERS * OWNER_SIZE];
-    let mut result = Account {
-      state: AccountState::try_from_primitive(state[0])
-        .or(Err(ProgramError::InvalidAccountData))?,
-      n_owners: u8::from_le_bytes(*n_owners),
-      owners: [Owner::unpack_from_slice(&[0u8; 34])?; MAX_OWNERS],
-    };
+  /*
+    is_init = 1 byte
+    (public key + key weight) * MAX_OWNERS = (32 + 2) * 11 = 374
+    ---
+    total: 375
+  */
+  const LEN: usize = 375;
 
-    for (src, dst) in owners_flat.chunks(34).zip(result.owners.iter_mut()) {
-      *dst = Owner::unpack_from_slice(src)?;
+  fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+    if src.len() == 0 || (src.len() - 1) % 34 != 0 {
+      return Err(ProgramError::InvalidAccountData);
     }
 
-    Ok(result)
+    let mut current = 0;
+    let state = read_u8(&mut current, src).unwrap();
+
+    let mut owners = BTreeMap::new();
+    while current < src.len() {
+      let pubkey = read_pubkey(&mut current, src).unwrap();
+      let weight = read_u16(&mut current, src).unwrap();
+      if weight == 0 {
+        break;
+      }
+      owners.insert(pubkey, weight);
+    }
+    Ok(Account {
+      state: AccountState::try_from_primitive(state).or(Err(ProgramError::InvalidAccountData))?,
+      owners: owners,
+    })
   }
 
   fn pack_into_slice(&self, dst: &mut [u8]) {
-    let dst = array_mut_ref![dst, 0, ACCOUNT_SIZE];
-    let (state_dst, n_owners_dst, owner_flat) = mut_array_refs![dst, 1, 1, MAX_OWNERS * OWNER_SIZE];
-    let &Account {
-      ref owners,
-      n_owners,
-      state,
-    } = self;
-    state_dst[0] = state as u8;
-    *n_owners_dst = n_owners.to_le_bytes();
-    for (i, src) in owners.iter().enumerate() {
-      let dst_array = array_mut_ref![owner_flat, 34 * i, 34];
-      src.pack_into_slice(dst_array);
+    let dst = array_mut_ref![dst, 0, Account::LEN];
+
+    let (is_init, key_and_weight) = mut_array_refs![dst, 1; ..;];
+
+    is_init.copy_from_slice(&(self.state as u8).to_le_bytes());
+
+    let mut start = 0;
+    for (pubkey, weight) in &self.owners {
+      key_and_weight[start..start + 32].copy_from_slice(pubkey.as_ref());
+      start += 32;
+
+      key_and_weight[start..start + 2].copy_from_slice(&weight.to_le_bytes());
+      start += 2;
     }
   }
 }
@@ -77,50 +80,9 @@ impl Sealed for Account {}
 
 impl IsInitialized for Account {
   fn is_initialized(&self) -> bool {
-      self.state != AccountState::Uninitialized
+    self.state != AccountState::Uninitialized
   }
 }
-
-/// Account data.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Owner {
-  /// The public key of the owner.
-  pub pubkey: Pubkey,
-
-  /// The weight of the owner.
-  pub weight: u16,
-}
-
-impl Pack for Owner {
-  const LEN: usize = 34;
-
-  fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-    let src = array_ref![src, 0, 34];
-    let (pubkey, weight) =
-      array_refs![src, 32, 2];
-    Ok(Owner {
-      pubkey: Pubkey::new_from_array(*pubkey),
-      weight: u16::from_le_bytes(*weight),
-    })
-  }
-
-  fn pack_into_slice(&self, dst: &mut [u8]) {
-    let dst = array_mut_ref![dst, 0, 34];
-    let (
-      pubkey_dst,
-      weight_dst,
-    ) = mut_array_refs![dst, 32, 2];
-    let &Owner {
-      ref pubkey,
-      weight,
-    } = self;
-    pubkey_dst.copy_from_slice(pubkey.as_ref());
-    *weight_dst = weight.to_le_bytes();
-  }
-}
-
-impl Sealed for Owner {}
 
 /// Account state.
 #[repr(u8)]
@@ -139,3 +101,29 @@ impl Default for AccountState {
   }
 }
 
+#[cfg(test)]
+mod test {
+  use super::*;
+  use crate::state::Account;
+  use std::str::FromStr;
+
+  #[test]
+  fn test_account_pack() {
+    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
+    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
+
+    let mut account = Account {
+      state: AccountState::Initialized,
+      owners: BTreeMap::<Pubkey, u16>::new(),
+    };
+    account.owners.insert(pubkey1, 999);
+    account.owners.insert(pubkey2, 1);
+
+    let mut dst = vec![0x00; Account::LEN];
+    account.pack_into_slice(&mut dst);
+
+    let unpack_account = Account::unpack_from_slice(&dst).unwrap();
+
+    assert_eq!(account, unpack_account);
+  }
+}
