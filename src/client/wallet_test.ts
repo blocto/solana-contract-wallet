@@ -71,7 +71,7 @@ const walletAccountDataLayout = BufferLayout.struct([
       BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
       BufferLayout.u16('weight'),
     ]),
-    11,
+    101,
     'owners',
   ),
 ]);
