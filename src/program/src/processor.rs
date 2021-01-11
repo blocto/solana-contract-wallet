@@ -32,6 +32,9 @@ impl Processor {
     wallet_account: &mut Account,
     owners: BTreeMap<Pubkey, u16>,
   ) -> ProgramResult {
+    // check key weight
+    Self::is_key_weight_enough(&owners)?;
+
     wallet_account.state = AccountState::Initialized;
 
     for (pubkey, weight) in owners {
@@ -76,6 +79,10 @@ impl Processor {
 
     // remove
     wallet_account.owners.remove(&pubkey);
+
+    // check key weight
+    Self::is_key_weight_enough(&wallet_account.owners)?;
+
     Ok(())
   }
 
@@ -88,6 +95,9 @@ impl Processor {
       info!("WalletError: too many owners");
       return Err(WalletError::InvalidInstruction.into());
     }
+
+    // check key weight
+    Self::is_key_weight_enough(&wallet_account.owners)?;
 
     wallet_account.owners.clear();
 
@@ -103,6 +113,12 @@ impl Processor {
       wallet_account.owners.insert(pubkey, weight);
     }
 
+    Ok(())
+  }
+
+  /// Process an Revoke insturction
+  fn process_revoke(wallet_account: &mut Account) -> ProgramResult {
+    wallet_account.owners.clear();
     Ok(())
   }
 
@@ -134,13 +150,27 @@ impl Processor {
     Ok(())
   }
 
+  fn is_key_weight_enough(owners: &BTreeMap<Pubkey, u16>) -> ProgramResult {
+    let mut sum_of_key_weight = 0;
+    for (_, weight) in owners {
+      sum_of_key_weight += weight;
+    }
+    if sum_of_key_weight < MIN_WEIGHT {
+      return Err(WalletError::InsufficientWeight.into());
+    }
+    Ok(())
+  }
+
   /// Check if signatures have enought weight
   fn check_signatures(accounts: &[AccountInfo], wallet_account: &Account) -> ProgramResult {
     let mut total_key_weight = 0;
     let mut counted = BTreeMap::new();
 
     for account in accounts.iter() {
-      if account.is_signer && wallet_account.owners.contains_key(account.key) && !counted.contains_key(account.key) {
+      if account.is_signer
+        && wallet_account.owners.contains_key(account.key)
+        && !counted.contains_key(account.key)
+      {
         counted.insert(account.key, true);
         total_key_weight += wallet_account.owners[account.key];
       }
@@ -241,6 +271,9 @@ impl Processor {
         info!("Instruction: Recovery");
         Self::process_recovery(&mut wallet_account, owners)
       }
+      WalletInstruction::Revoke if is_wallet_initialized => {
+        Self::process_revoke(&mut wallet_account)
+      }
       WalletInstruction::Invoke {
         instruction: internal_instruction,
       } if is_wallet_initialized => {
@@ -259,88 +292,132 @@ impl Processor {
 
 #[cfg(test)]
 mod test {
+
   use super::*;
+  use maplit::btreemap;
   use std::str::FromStr;
 
   #[test]
-  fn test_process_initialize_wallet() {
-    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
-    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
-
-    let mut wallet_account = Account {
+  fn should_fail_when_init_with_key_weight_is_not_enough() {
+    let mut init_account = Account {
       state: AccountState::Uninitialized,
       owners: BTreeMap::new(),
     };
-    let mut init_keys = BTreeMap::new();
-    init_keys.insert(pubkey1, 999);
-    init_keys.insert(pubkey2, 1);
+    let init_keys = btreemap! {
+      Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1,
+      Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1,
+    };
+    let expected_account = Account {
+      state: AccountState::Uninitialized,
+      owners: BTreeMap::new(),
+    };
+
     assert_eq!(
-      Processor::process_initialize_wallet(&mut wallet_account, init_keys),
+      Processor::process_initialize_wallet(&mut init_account, init_keys.clone()),
+      Err(WalletError::InsufficientWeight.into()),
+    );
+    assert_eq!(init_account, expected_account);
+  }
+
+  #[test]
+  fn process_initialize_wallet_should_success() {
+    let mut init_account = Account {
+      state: AccountState::Uninitialized,
+      owners: BTreeMap::new(),
+    };
+    let init_keys = btreemap! {
+      Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 999,
+      Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1,
+    };
+
+    assert_eq!(
+      Processor::process_initialize_wallet(&mut init_account, init_keys.clone()),
+      Ok(()),
+    );
+    assert_eq!(
+      init_account,
+      Account {
+        state: AccountState::Initialized,
+        owners: init_keys.clone(),
+      },
+    );
+  }
+
+  #[test]
+  fn process_add_owner_should_success() {
+    let mut init_account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap! {
+        Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
+      },
+    };
+
+    let add_keys =
+      btreemap! {Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1};
+    assert_eq!(
+      Processor::process_add_owner(&mut init_account, add_keys),
       Ok(())
     );
 
-    let mut expected_account = Account {
+    let expected_account = Account {
       state: AccountState::Initialized,
-      owners: BTreeMap::<Pubkey, u16>::new(),
+      owners: btreemap! {
+        Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
+        Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1
+      },
     };
-    expected_account.owners.insert(pubkey1, 999);
-    expected_account.owners.insert(pubkey2, 1);
+    assert_eq!(init_account, expected_account);
+  }
 
+  #[test]
+  fn should_fail_when_recovery_with_key_weight_is_not_enough() {
+    let mut wallet_account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+    };
+    let recovery_keys = btreemap! {
+      Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1,
+    };
+    assert_eq!(
+      Processor::process_initialize_wallet(&mut wallet_account, recovery_keys),
+      Err(WalletError::InsufficientWeight.into()),
+    );
+  }
+
+  #[test]
+  fn process_recovery_should_success() {
+    let mut wallet_account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+    };
+    let recovery_keys = btreemap! {Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1000};
+    assert_eq!(
+      Processor::process_recovery(&mut wallet_account, recovery_keys.clone()),
+      Ok(())
+    );
+
+    let expected_account = Account {
+      state: AccountState::Initialized,
+      owners: recovery_keys.clone(),
+    };
     assert_eq!(wallet_account, expected_account);
   }
 
   #[test]
-  fn test_process_add_owner() {
-    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
-    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
-
+  fn process_revoke_should_success() {
     let mut wallet_account = Account {
       state: AccountState::Initialized,
-      owners: BTreeMap::new(),
+      owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
     };
-    wallet_account.owners.insert(pubkey1, 999);
-
-    let mut add_keys = BTreeMap::new();
-    add_keys.insert(pubkey2, 1);
     assert_eq!(
-      Processor::process_add_owner(&mut wallet_account, add_keys),
+      Processor::process_revoke(&mut wallet_account),
       Ok(())
     );
 
-    let mut expected_account = Account {
+    let expected_account = Account {
       state: AccountState::Initialized,
-      owners: BTreeMap::<Pubkey, u16>::new(),
+      owners: btreemap!{},
     };
-    expected_account.owners.insert(pubkey1, 999);
-    expected_account.owners.insert(pubkey2, 1);
-
-    assert_eq!(wallet_account, expected_account);
-  }
-
-  #[test]
-  fn test_process_recovery() {
-    let pubkey1 = Pubkey::from_str("EvN4kgKmCmYzdbd5kL8Q8YgkUW5RoqMTpBczrfLExtx7").unwrap();
-    let pubkey2 = Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap();
-
-    let mut wallet_account = Account {
-      state: AccountState::Initialized,
-      owners: BTreeMap::new(),
-    };
-    wallet_account.owners.insert(pubkey1, 1000);
-
-    let mut recovery_keys = BTreeMap::new();
-    recovery_keys.insert(pubkey2, 1000);
-    assert_eq!(
-      Processor::process_recovery(&mut wallet_account, recovery_keys),
-      Ok(())
-    );
-
-    let mut expected_account = Account {
-      state: AccountState::Initialized,
-      owners: BTreeMap::<Pubkey, u16>::new(),
-    };
-    expected_account.owners.insert(pubkey2, 1000);
-
     assert_eq!(wallet_account, expected_account);
   }
 }

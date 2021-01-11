@@ -13,6 +13,7 @@ export enum Instruction {
   RemoveOwner,
   Recovery,
   Invoke,
+  Revoke,
   Hello,
 }
 
