@@ -116,6 +116,12 @@ impl Processor {
     Ok(())
   }
 
+  /// Process an Revoke insturction
+  fn process_revoke(wallet_account: &mut Account) -> ProgramResult {
+    wallet_account.owners.clear();
+    Ok(())
+  }
+
   /// Process an Invoke instruction and call another program
   fn process_invoke(accounts: &[AccountInfo], instruction: Instruction) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
@@ -265,6 +271,9 @@ impl Processor {
         info!("Instruction: Recovery");
         Self::process_recovery(&mut wallet_account, owners)
       }
+      WalletInstruction::Revoke if is_wallet_initialized => {
+        Self::process_revoke(&mut wallet_account)
+      }
       WalletInstruction::Invoke {
         instruction: internal_instruction,
       } if is_wallet_initialized => {
@@ -390,6 +399,24 @@ mod test {
     let expected_account = Account {
       state: AccountState::Initialized,
       owners: recovery_keys.clone(),
+    };
+    assert_eq!(wallet_account, expected_account);
+  }
+
+  #[test]
+  fn process_revoke_should_success() {
+    let mut wallet_account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+    };
+    assert_eq!(
+      Processor::process_revoke(&mut wallet_account),
+      Ok(())
+    );
+
+    let expected_account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap!{},
     };
     assert_eq!(wallet_account, expected_account);
   }

@@ -40,6 +40,8 @@ pub enum WalletInstruction {
     /// public key => key weight
     owners: BTreeMap<Pubkey, u16>,
   },
+  /// Revoke will freeze wallet
+  Revoke,
   /// Say hello
   Hello,
 }
@@ -112,8 +114,9 @@ impl WalletInstruction {
           data: rest.iter().cloned().collect(),
         }}
       }
+      4 => Self::Revoke,
       // Hello (testing)
-      4 => Self::Hello,
+      5 => Self::Hello,
       _ => return Err(WalletError::InvalidInstruction.into()),
     })
   }
@@ -148,8 +151,11 @@ impl WalletInstruction {
         buf.extend_from_slice(instruction.program_id.as_ref());
         // TODO: Complete invoke instruction packing
       }
-      &Self::Hello => {
+      &Self::Revoke => {
         buf.push(4);
+      },
+      &Self::Hello => {
+        buf.push(5);
       },
     }
 
