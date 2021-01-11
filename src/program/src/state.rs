@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 pub const MIN_WEIGHT: u16 = 1000;
 
 /// Maximum number of multisignature owners
-pub const MAX_OWNERS: usize = 11;
+pub const MAX_OWNERS: usize = 101;
 
 /// Account data.
 #[repr(C)]
@@ -29,11 +29,11 @@ pub struct Account {
 impl Pack for Account {
   /*
     is_init = 1 byte
-    (public key + key weight) * MAX_OWNERS = (32 + 2) * 11 = 374
+    (public key + key weight) * MAX_OWNERS = (32 + 2) * 101 = 3434
     ---
     total: 375
   */
-  const LEN: usize = 375;
+  const LEN: usize = 3435;
 
   fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
     if src.len() == 0 || (src.len() - 1) % 34 != 0 {
