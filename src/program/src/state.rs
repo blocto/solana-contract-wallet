@@ -59,6 +59,11 @@ impl Pack for Account {
   }
 
   fn pack_into_slice(&self, dst: &mut [u8]) {
+    // reset all byte to 0
+    for i in dst.iter_mut() {
+      *i = 0;
+    }
+
     let dst = array_mut_ref![dst, 0, Account::LEN];
 
     let (is_init, key_and_weight) = mut_array_refs![dst, 1; ..;];
@@ -105,6 +110,7 @@ impl Default for AccountState {
 mod test {
   use super::*;
   use crate::state::Account;
+  use maplit::btreemap;
   use std::str::FromStr;
 
   #[test]
@@ -125,5 +131,31 @@ mod test {
     let unpack_account = Account::unpack_from_slice(&dst).unwrap();
 
     assert_eq!(account, unpack_account);
+  }
+
+  #[test]
+  fn test_account_pack_into_exist_data() {
+    let mut account_dst1 = vec![0x00; Account::LEN];
+    let mut account_dst2 = vec![0x00; Account::LEN];
+
+    // create a init account
+    let mut account = Account {
+      state: AccountState::Initialized,
+      owners: btreemap! {
+        Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap() => 1000,
+        Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
+      },
+    };
+    account.pack_into_slice(&mut account_dst1);
+
+    // remove owner and pack into origin destination
+    account.owners.remove(&Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap());
+    account.pack_into_slice(&mut account_dst1);
+
+    // pack into another destination
+    account.pack_into_slice(&mut account_dst2);
+
+    // compare
+    assert_eq!(account_dst1, account_dst2)
   }
 }
