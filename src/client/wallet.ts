@@ -191,6 +191,7 @@ export class Wallet {
         isWritable: true,
       },
       // target instruction program
+      ...keys,
       {
         pubkey: internalInstruction.programId,
         isSigner: false,
@@ -199,7 +200,6 @@ export class Wallet {
       ...internalInstruction.keys.filter(
         key => key.pubkey.toBase58() !== derivedPubkey.toBase58(),
       ),
-      ...keys,
     ];
 
     return new TransactionInstruction({
