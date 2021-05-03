@@ -259,7 +259,7 @@ impl Processor {
       Self::check_signatures(accounts, &wallet_account)?;
     }
 
-    let instruction = WalletInstruction::unpack(input)?;
+    let instruction = WalletInstruction::unpack(input, &accounts)?;
 
     match instruction {
       WalletInstruction::Hello if is_wallet_initialized => {

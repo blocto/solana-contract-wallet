@@ -3,18 +3,13 @@
 use crate::error::WalletError;
 use serde::Serialize;
 use solana_program::{
-  info,
+  account_info::AccountInfo,
   instruction::{AccountMeta, Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
-  serialize_utils::{read_pubkey, read_u16},
+  serialize_utils::{read_pubkey, read_u16, read_u8},
 };
-use std::{
-  convert::TryInto,
-  mem::size_of,
-  str,
-  collections::BTreeMap,
-};
+use std::{collections::BTreeMap, mem::size_of, str};
 
 /// Instructions supported by the multisig wallet program.
 #[repr(C)]
@@ -48,9 +43,8 @@ pub enum WalletInstruction {
 
 impl WalletInstruction {
   /// Unpacks a byte buffer into a WalletInstruction
-  pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+  pub fn unpack(input: &[u8], accounts: &[AccountInfo]) -> Result<Self, ProgramError> {
     use WalletError::InvalidInstruction;
-
     let (&tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
     Ok(match tag {
       // AddOwner
@@ -82,37 +76,30 @@ impl WalletInstruction {
       },
       // Invoke
       3 => {
-        let (program_id, rest) = Self::unpack_pubkey(rest)?;
-        let (keys_length, mut rest) = rest.split_at(2);
-        let keys_length = keys_length
-          .try_into()
-          .ok()
-          .map(u16::from_le_bytes)
-          .ok_or(InvalidInstruction)?;
+        let mut current = 0;
+        let program_id_idx = usize::from(read_u8(&mut current, rest).unwrap());
+        let account_len = usize::from(read_u16(&mut current, rest).unwrap());
 
-        let mut accounts = Vec::new();
-        for _ in 0..usize::from(keys_length) {
-          let (pubkey, internel_rest) = Self::unpack_pubkey(rest)?;
-          let (&is_signer, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
-          let (&is_writable, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
-          rest = internel_rest;
+        let mut invoke_accounts = Vec::new();
+        for _ in 0..account_len {
+          let account_idx = usize::from(read_u8(&mut current, rest).unwrap());
+          let account_metadata = read_u8(&mut current, rest).unwrap();
 
           let account_meta = AccountMeta {
-            pubkey: pubkey,
-            is_signer: is_signer == true as u8,
-            is_writable: is_writable == true as u8,
+            pubkey: *accounts[account_idx].key,
+            is_signer: account_metadata >> 1 & 1 == 1,
+            is_writable: account_metadata & 1 == 1,
           };
-
-          info!(bs58::encode(pubkey.to_bytes()).into_string().as_str());
-
-          accounts.push(account_meta);
+          invoke_accounts.push(account_meta);
         }
 
-        Self::Invoke { instruction: Instruction {
-          program_id: program_id,
-          accounts: accounts,
-          data: rest.iter().cloned().collect(),
-        }}
+        Self::Invoke {
+          instruction: Instruction {
+            program_id: *accounts[program_id_idx].key,
+            accounts: invoke_accounts,
+            data: rest[current..].to_vec(),
+          },
+        }
       }
       4 => Self::Revoke,
       // Hello (testing)
