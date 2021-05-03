@@ -30,15 +30,15 @@ pub enum WalletInstruction {
     /// The public key to remove from the owner list
     pubkey: Pubkey
   },
-  /// Invoke an instruction to another program
-  Invoke {
-    /// The instruction for the wallet to invoke
-    instruction: Instruction
-  },
   /// Recovery can reset all your account owners
   Recovery {
     /// public key => key weight
     owners: BTreeMap<Pubkey, u16>,
+  },
+  /// Invoke an instruction to another program
+  Invoke {
+    /// The instruction for the wallet to invoke
+    instruction: Instruction
   },
   /// Revoke will freeze wallet
   Revoke,
