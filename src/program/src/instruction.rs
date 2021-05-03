@@ -23,7 +23,7 @@ pub enum WalletInstruction {
   /// Remove a Pubkey from owner list
   RemoveOwner {
     /// The public key to remove from the owner list
-    pubkey: Pubkey
+    pubkey: Pubkey,
   },
   /// Recovery can reset all your account owners
   Recovery {
@@ -33,7 +33,7 @@ pub enum WalletInstruction {
   /// Invoke an instruction to another program
   Invoke {
     /// The instruction for the wallet to invoke
-    instruction: Instruction
+    instruction: Instruction,
   },
   /// Revoke will freeze wallet
   Revoke,
@@ -56,13 +56,13 @@ impl WalletInstruction {
           let weight = read_u16(&mut current, rest).unwrap();
           owners.insert(pubkey, weight);
         }
-        Self::AddOwner {owners: owners}
+        Self::AddOwner { owners: owners }
       }
       // RemoveOwner
       1 => {
         let (pubkey, _) = Self::unpack_pubkey(rest)?;
         Self::RemoveOwner { pubkey }
-      },
+      }
       // Recovery
       2 => {
         let mut current = 0;
@@ -72,8 +72,8 @@ impl WalletInstruction {
           let weight = read_u16(&mut current, rest).unwrap();
           owners.insert(pubkey, weight);
         }
-        Self::Recovery {owners: owners}
-      },
+        Self::Recovery { owners: owners }
+      }
       // Invoke
       3 => {
         let mut current = 0;
@@ -113,37 +113,29 @@ impl WalletInstruction {
     let mut buf = Vec::with_capacity(size_of::<Self>());
 
     match self {
-      &Self::AddOwner {
-        owners: _,
-      } => {
+      &Self::AddOwner { owners: _ } => {
         buf.push(0);
         // TODO
-      },
-      &Self::RemoveOwner {
-        ref pubkey,
-      } => {
+      }
+      &Self::RemoveOwner { ref pubkey } => {
         buf.push(1);
         buf.extend_from_slice(pubkey.as_ref());
       }
-      &Self::Recovery {
-        owners: _,
-      } => {
+      &Self::Recovery { owners: _ } => {
         buf.push(2)
         // TODO
       }
-      &Self::Invoke {
-        ref instruction,
-      } => {
+      &Self::Invoke { ref instruction } => {
         buf.push(3);
         buf.extend_from_slice(instruction.program_id.as_ref());
         // TODO: Complete invoke instruction packing
       }
       &Self::Revoke => {
         buf.push(4);
-      },
+      }
       &Self::Hello => {
         buf.push(5);
-      },
+      }
     }
 
     buf
