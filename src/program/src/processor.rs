@@ -148,7 +148,6 @@ impl Processor {
     for account in &mut instruction.accounts {
       if &account.pubkey == payer_account.key {
         account.is_signer = false;
-        account.is_writable = false;
       }
     }
 
