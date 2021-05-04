@@ -3,18 +3,13 @@
 use crate::error::WalletError;
 use serde::Serialize;
 use solana_program::{
-  info,
+  account_info::AccountInfo,
   instruction::{AccountMeta, Instruction},
   program_error::ProgramError,
   pubkey::Pubkey,
-  serialize_utils::{read_pubkey, read_u16},
+  serialize_utils::{read_pubkey, read_u16, read_u8},
 };
-use std::{
-  convert::TryInto,
-  mem::size_of,
-  str,
-  collections::BTreeMap,
-};
+use std::{collections::BTreeMap, mem::size_of, str};
 
 /// Instructions supported by the multisig wallet program.
 #[repr(C)]
@@ -28,17 +23,17 @@ pub enum WalletInstruction {
   /// Remove a Pubkey from owner list
   RemoveOwner {
     /// The public key to remove from the owner list
-    pubkey: Pubkey
-  },
-  /// Invoke an instruction to another program
-  Invoke {
-    /// The instruction for the wallet to invoke
-    instruction: Instruction
+    pubkey: Pubkey,
   },
   /// Recovery can reset all your account owners
   Recovery {
     /// public key => key weight
     owners: BTreeMap<Pubkey, u16>,
+  },
+  /// Invoke an instruction to another program
+  Invoke {
+    /// The instruction for the wallet to invoke
+    instruction: Instruction,
   },
   /// Revoke will freeze wallet
   Revoke,
@@ -48,9 +43,8 @@ pub enum WalletInstruction {
 
 impl WalletInstruction {
   /// Unpacks a byte buffer into a WalletInstruction
-  pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+  pub fn unpack(input: &[u8], accounts: &[AccountInfo]) -> Result<Self, ProgramError> {
     use WalletError::InvalidInstruction;
-
     let (&tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
     Ok(match tag {
       // AddOwner
@@ -62,13 +56,13 @@ impl WalletInstruction {
           let weight = read_u16(&mut current, rest).unwrap();
           owners.insert(pubkey, weight);
         }
-        Self::AddOwner {owners: owners}
+        Self::AddOwner { owners: owners }
       }
       // RemoveOwner
       1 => {
         let (pubkey, _) = Self::unpack_pubkey(rest)?;
         Self::RemoveOwner { pubkey }
-      },
+      }
       // Recovery
       2 => {
         let mut current = 0;
@@ -78,41 +72,34 @@ impl WalletInstruction {
           let weight = read_u16(&mut current, rest).unwrap();
           owners.insert(pubkey, weight);
         }
-        Self::Recovery {owners: owners}
-      },
+        Self::Recovery { owners: owners }
+      }
       // Invoke
       3 => {
-        let (program_id, rest) = Self::unpack_pubkey(rest)?;
-        let (keys_length, mut rest) = rest.split_at(2);
-        let keys_length = keys_length
-          .try_into()
-          .ok()
-          .map(u16::from_le_bytes)
-          .ok_or(InvalidInstruction)?;
+        let mut current = 0;
+        let program_id_idx = usize::from(read_u8(&mut current, rest).unwrap());
+        let account_len = usize::from(read_u16(&mut current, rest).unwrap());
 
-        let mut accounts = Vec::new();
-        for _ in 0..usize::from(keys_length) {
-          let (pubkey, internel_rest) = Self::unpack_pubkey(rest)?;
-          let (&is_signer, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
-          let (&is_writable, internel_rest) = internel_rest.split_first().ok_or(InvalidInstruction)?;
-          rest = internel_rest;
+        let mut invoke_accounts = Vec::new();
+        for _ in 0..account_len {
+          let account_idx = usize::from(read_u8(&mut current, rest).unwrap());
+          let account_metadata = read_u8(&mut current, rest).unwrap();
 
           let account_meta = AccountMeta {
-            pubkey: pubkey,
-            is_signer: is_signer == true as u8,
-            is_writable: is_writable == true as u8,
+            pubkey: *accounts[account_idx].key,
+            is_signer: account_metadata >> 1 & 1 == 1,
+            is_writable: account_metadata & 1 == 1,
           };
-
-          info!(bs58::encode(pubkey.to_bytes()).into_string().as_str());
-
-          accounts.push(account_meta);
+          invoke_accounts.push(account_meta);
         }
 
-        Self::Invoke { instruction: Instruction {
-          program_id: program_id,
-          accounts: accounts,
-          data: rest.iter().cloned().collect(),
-        }}
+        Self::Invoke {
+          instruction: Instruction {
+            program_id: *accounts[program_id_idx].key,
+            accounts: invoke_accounts,
+            data: rest[current..].to_vec(),
+          },
+        }
       }
       4 => Self::Revoke,
       // Hello (testing)
@@ -126,37 +113,29 @@ impl WalletInstruction {
     let mut buf = Vec::with_capacity(size_of::<Self>());
 
     match self {
-      &Self::AddOwner {
-        owners: _,
-      } => {
+      &Self::AddOwner { owners: _ } => {
         buf.push(0);
         // TODO
-      },
-      &Self::RemoveOwner {
-        ref pubkey,
-      } => {
+      }
+      &Self::RemoveOwner { ref pubkey } => {
         buf.push(1);
         buf.extend_from_slice(pubkey.as_ref());
       }
-      &Self::Recovery {
-        owners: _,
-      } => {
+      &Self::Recovery { owners: _ } => {
         buf.push(2)
         // TODO
       }
-      &Self::Invoke {
-        ref instruction,
-      } => {
+      &Self::Invoke { ref instruction } => {
         buf.push(3);
         buf.extend_from_slice(instruction.program_id.as_ref());
         // TODO: Complete invoke instruction packing
       }
       &Self::Revoke => {
         buf.push(4);
-      },
+      }
       &Self::Hello => {
         buf.push(5);
-      },
+      }
     }
 
     buf

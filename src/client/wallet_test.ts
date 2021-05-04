@@ -450,6 +450,7 @@ export async function sayHelloWithContractWallet(): Promise<void> {
   const transaction = await Wallet.createInvokeTransaction(
     programId,
     walletPubkey,
+    payerAccount.publicKey,
     internalTransaction,
     signers,
   );

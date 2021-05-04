@@ -148,7 +148,6 @@ impl Processor {
     for account in &mut instruction.accounts {
       if &account.pubkey == payer_account.key {
         account.is_signer = false;
-        account.is_writable = false;
       }
     }
 
@@ -259,7 +258,7 @@ impl Processor {
       Self::check_signatures(accounts, &wallet_account)?;
     }
 
-    let instruction = WalletInstruction::unpack(input)?;
+    let instruction = WalletInstruction::unpack(input, &accounts)?;
 
     match instruction {
       WalletInstruction::Hello if is_wallet_initialized => {
