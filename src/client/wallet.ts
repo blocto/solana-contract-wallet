@@ -6,7 +6,12 @@
 // @ts-ignore
 import * as BufferLayout from 'buffer-layout';
 
-import {Account, PublicKey, TransactionInstruction} from '@solana/web3.js';
+import {
+  Account,
+  AccountMeta,
+  PublicKey,
+  TransactionInstruction,
+} from '@solana/web3.js';
 
 export enum Instruction {
   AddOwner = 0,
@@ -17,30 +22,38 @@ export enum Instruction {
   Hello,
 }
 
-const AccountMetaLayout = BufferLayout.struct([
-  BufferLayout.seq(BufferLayout.u8(), 32, 'pubkey'),
-  BufferLayout.u8('isSigner'),
-  BufferLayout.u8('isWritable'),
-]);
-
 export class Wallet {
-  static encodeInstruction(instruction: TransactionInstruction): Buffer {
+  static encodeInstruction(
+    instruction: TransactionInstruction,
+    keys: AccountMeta[],
+  ): Buffer {
     const dataLayout = BufferLayout.struct([
-      BufferLayout.seq(BufferLayout.u8(), 32, 'programId'),
+      BufferLayout.u8('programIdIdx'),
       BufferLayout.u16('keysLength'),
-      BufferLayout.seq(AccountMetaLayout, instruction.keys.length, 'keys'),
+      BufferLayout.seq(
+        BufferLayout.struct([
+          BufferLayout.u8('pubkeyIdx'),
+          BufferLayout.u8('metadata'), // isSigner / isWritable
+        ]),
+        instruction.keys.length,
+        'keys',
+      ),
       BufferLayout.seq(BufferLayout.u8(), instruction.data.length, 'data'),
     ]);
+
+    const m = new Map<string, number>();
+    keys.forEach((accountInfo, idx) => {
+      m.set(accountInfo.pubkey.toBase58(), idx);
+    });
 
     const data = Buffer.alloc(dataLayout.span);
     dataLayout.encode(
       {
-        programId: instruction.programId.toBuffer(),
+        programIdIdx: m.get(instruction.programId.toBase58()),
         keysLength: instruction.keys.length,
         keys: instruction.keys.map(key => ({
-          pubkey: key.pubkey.toBuffer(),
-          isSigner: key.isSigner,
-          isWritable: key.isWritable,
+          pubkeyIdx: m.get(key.pubkey.toBase58()),
+          metadata: ((key.isSigner ? 1 : 0) << 1) | (key.isWritable ? 1 : 0),
         })),
         data: instruction.data,
       },
@@ -141,31 +154,10 @@ export class Wallet {
   static async createInvokeTransaction(
     programId: PublicKey,
     walletPubkey: PublicKey,
+    feePayerPubkey: PublicKey,
     internalInstruction: TransactionInstruction,
     signers: Array<Account>,
   ): Promise<TransactionInstruction> {
-    const internalInstructionData = Wallet.encodeInstruction(
-      internalInstruction,
-    );
-
-    const dataLayout = BufferLayout.struct([
-      BufferLayout.u8('instruction'),
-      BufferLayout.seq(
-        BufferLayout.u8(),
-        internalInstructionData.length,
-        'data',
-      ),
-    ]);
-
-    const data = Buffer.alloc(dataLayout.span);
-    dataLayout.encode(
-      {
-        instruction: Instruction.Invoke,
-        data: internalInstructionData,
-      },
-      data,
-    );
-
     let keys = signers.map(signer => ({
       pubkey: signer.publicKey,
       isSigner: true,
@@ -190,6 +182,11 @@ export class Wallet {
         isSigner: false,
         isWritable: true,
       },
+      {
+        pubkey: feePayerPubkey,
+        isSigner: true,
+        isWritable: true,
+      },
       // target instruction program
       ...keys,
       {
@@ -201,6 +198,27 @@ export class Wallet {
         key => key.pubkey.toBase58() !== derivedPubkey.toBase58(),
       ),
     ];
+
+    const internalInstructionData = Wallet.encodeInstruction(
+      internalInstruction,
+      keys,
+    );
+    const dataLayout = BufferLayout.struct([
+      BufferLayout.u8('instruction'),
+      BufferLayout.seq(
+        BufferLayout.u8(),
+        internalInstructionData.length,
+        'data',
+      ),
+    ]);
+    const data = Buffer.alloc(dataLayout.span);
+    dataLayout.encode(
+      {
+        instruction: Instruction.Invoke,
+        data: internalInstructionData,
+      },
+      data,
+    );
 
     return new TransactionInstruction({
       keys,
