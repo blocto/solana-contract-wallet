@@ -60,7 +60,8 @@ impl WalletInstruction {
             }
             // RemoveOwner
             1 => {
-                let (pubkey, _) = Self::unpack_pubkey(rest)?;
+                let mut current = 0;
+                let pubkey = read_pubkey(&mut current, rest).unwrap();
                 Self::RemoveOwner { pubkey }
             }
             // Recovery
@@ -139,15 +140,5 @@ impl WalletInstruction {
         }
 
         buf
-    }
-
-    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
-        if input.len() >= 32 {
-            let (key, rest) = input.split_at(32);
-            let pk = Pubkey::new(key);
-            Ok((pk, rest))
-        } else {
-            Err(WalletError::InvalidInstruction.into())
-        }
     }
 }
