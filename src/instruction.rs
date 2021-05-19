@@ -9,7 +9,7 @@ use solana_program::{
     pubkey::Pubkey,
     serialize_utils::{read_pubkey, read_u16, read_u8},
 };
-use std::{collections::BTreeMap, mem::size_of, str};
+use std::{collections::BTreeMap, str};
 
 /// Instructions supported by the multisig wallet program.
 #[repr(C)]
@@ -107,38 +107,5 @@ impl WalletInstruction {
             5 => Self::Hello,
             _ => return Err(WalletError::InvalidInstruction.into()),
         })
-    }
-
-    /// Packs a WalletInstruction into a byte buffer.
-    pub fn pack(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(size_of::<Self>());
-
-        match self {
-            &Self::AddOwner { owners: _ } => {
-                buf.push(0);
-                // TODO
-            }
-            &Self::RemoveOwner { ref pubkey } => {
-                buf.push(1);
-                buf.extend_from_slice(pubkey.as_ref());
-            }
-            &Self::Recovery { owners: _ } => {
-                buf.push(2)
-                // TODO
-            }
-            &Self::Invoke { ref instruction } => {
-                buf.push(3);
-                buf.extend_from_slice(instruction.program_id.as_ref());
-                // TODO: Complete invoke instruction packing
-            }
-            &Self::Revoke => {
-                buf.push(4);
-            }
-            &Self::Hello => {
-                buf.push(5);
-            }
-        }
-
-        buf
     }
 }
