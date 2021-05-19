@@ -3,7 +3,7 @@
 use crate::{
     error::WalletError,
     instruction::WalletInstruction,
-    state::{Account, AccountState, MAX_OWNERS, MIN_WEIGHT},
+    state::{Account, AccountState, InstructionBuffer, PartialInstruction, MAX_OWNERS, MIN_WEIGHT},
 };
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -249,50 +249,241 @@ impl Processor {
         Ok(())
     }
 
+    fn process_init_instruction_buffer(
+        _program_id: &Pubkey,
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let instruction_account_info = next_account_info(accounts_iter)?;
+        let owner_account_info = next_account_info(accounts_iter)?;
+
+        let mut sequence_instructions =
+            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
+        if sequence_instructions.owner != Pubkey::default() {
+            return Err(ProgramError::AccountAlreadyInitialized);
+        }
+
+        sequence_instructions.owner = *owner_account_info.key;
+
+        InstructionBuffer::pack(
+            sequence_instructions,
+            &mut instruction_account_info.data.borrow_mut(),
+        )?;
+
+        Ok(())
+    }
+
+    fn process_append_partial_instruction(
+        _program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        idx: u16,
+        instruction: Instruction,
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let _wallet_account_info = next_account_info(accounts_iter)?;
+        let instruction_account_info = next_account_info(accounts_iter)?;
+        let owner_account_info = next_account_info(accounts_iter)?;
+
+        if !owner_account_info.is_signer {
+            info!(&format!("{} should be a signer", owner_account_info.key));
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let mut sequence_instructions =
+            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
+        if sequence_instructions.owner != *owner_account_info.key {
+            info!(&format!("{} owner mismatch", instruction_account_info.key));
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        sequence_instructions.owner = *owner_account_info.key;
+        sequence_instructions
+            .instructions
+            .push(PartialInstruction { idx, instruction });
+
+        InstructionBuffer::pack(
+            sequence_instructions,
+            &mut instruction_account_info.data.borrow_mut(),
+        )?;
+
+        Ok(())
+    }
+
+    fn process_run_insturction_buffer(
+        _program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        num: u16,
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let wallet_account = next_account_info(accounts_iter)?;
+        let instruction_account_info = next_account_info(accounts_iter)?;
+        let owner_account_info = next_account_info(accounts_iter)?;
+
+        if !owner_account_info.is_signer {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let sequence_instructions =
+            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
+        if sequence_instructions.instructions.len() != usize::from(num) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        if sequence_instructions.owner != *owner_account_info.key {
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        let mut pass_accounts = Vec::new();
+
+        let instruction_num = sequence_instructions.instructions.len();
+        let mut inner_instructions = BTreeMap::<u16, &Instruction>::new();
+        for ins in sequence_instructions.instructions.iter() {
+            inner_instructions.insert(ins.idx, &ins.instruction);
+        }
+
+        for account in accounts_iter {
+            let mut pass_account = account.clone();
+            if pass_account.key == owner_account_info.key {
+                pass_account.is_signer = false;
+            }
+            pass_accounts.push(account.clone());
+        }
+
+        for n in 0..instruction_num {
+            invoke_signed(
+                inner_instructions.get(&(n as u16)).unwrap(),
+                pass_accounts.as_slice(),
+                &[&[&wallet_account.key.to_bytes()]],
+            )?;
+        }
+
+        let dest_starting_lamports = owner_account_info.lamports();
+        **owner_account_info.lamports.borrow_mut() = dest_starting_lamports
+            .checked_add(instruction_account_info.lamports())
+            .ok_or(ProgramError::InvalidAccountData)?;
+        **instruction_account_info.lamports.borrow_mut() = 0;
+
+        Ok(())
+    }
+
+    fn process_close_instruction_buffer(
+        _program_id: &Pubkey,
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let instruction_account_info = next_account_info(accounts_iter)?;
+        let owner_account_info = next_account_info(accounts_iter)?;
+
+        if !owner_account_info.is_signer {
+            info!(&format!("{} should be a signer", owner_account_info.key));
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let sequence_instructions =
+            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
+
+        if sequence_instructions.owner != *owner_account_info.key {
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        let dest_starting_lamports = owner_account_info.lamports();
+        **owner_account_info.lamports.borrow_mut() = dest_starting_lamports
+            .checked_add(instruction_account_info.lamports())
+            .ok_or(ProgramError::InvalidAccountData)?;
+        **instruction_account_info.lamports.borrow_mut() = 0;
+
+        Ok(())
+    }
+
     /// Process a WalletInstruction
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
-        // TODO distributed processing only
-        let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
-        let is_wallet_initialized = wallet_account.is_initialized();
-
         let instruction = WalletInstruction::unpack(input, &accounts)?;
 
         match instruction {
-            WalletInstruction::AddOwner { owners } if !is_wallet_initialized => {
-                info!("Instruction: AddOwner (Initialize Wallet)");
-                Self::process_initialize_wallet(&mut wallet_account, owners)
+            WalletInstruction::AddOwner { owners } => {
+                let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                let is_wallet_initialized = wallet_account.is_initialized();
+
+                // TODO add init instruction to handle it
+                if !is_wallet_initialized {
+                    info!("Instruction: AddOwner (Initialize Wallet)");
+                    Self::process_initialize_wallet(&mut wallet_account, owners)
+                } else {
+                    info!("Instruction: AddOwner");
+                    Self::check_signatures(accounts, &wallet_account)?;
+                    Self::process_add_owner(&mut wallet_account, owners)
+                }
             }
-            WalletInstruction::AddOwner { owners } if is_wallet_initialized => {
-                info!("Instruction: AddOwner");
-                Self::check_signatures(accounts, &wallet_account)?;
-                Self::process_add_owner(&mut wallet_account, owners)
-            }
-            WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
+            WalletInstruction::RemoveOwner { pubkey } => {
                 info!("Instruction: RemoveOwner");
+                let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
                 Self::check_signatures(accounts, &wallet_account)?;
                 Self::process_remove_owner(&mut wallet_account, pubkey)
             }
-            WalletInstruction::Recovery { owners } if is_wallet_initialized => {
+            WalletInstruction::Recovery { owners } => {
                 info!("Instruction: Recovery");
+                let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
                 Self::check_signatures(accounts, &wallet_account)?;
                 Self::process_recovery(&mut wallet_account, owners)
             }
-            WalletInstruction::Revoke if is_wallet_initialized => {
+            WalletInstruction::Revoke => {
                 info!("Instruction: Revoke");
+                let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
                 Self::check_signatures(accounts, &wallet_account)?;
                 Self::process_revoke(&mut wallet_account)
             }
             WalletInstruction::Invoke {
                 instruction: internal_instruction,
-            } if is_wallet_initialized => {
+            } => {
                 info!("Instruction: Invoke");
+                let wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
                 Self::check_signatures(accounts, &wallet_account)?;
                 Self::process_invoke(accounts, internal_instruction)
             }
-            WalletInstruction::Hello if is_wallet_initialized => {
+            WalletInstruction::Hello => {
                 info!("Instruction: Hello");
+                let wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
                 Self::check_signatures(accounts, &wallet_account)?;
                 Self::process_hello()
+            }
+            WalletInstruction::InitInstructionBuffer => {
+                info!("Instruction: InitInstructionBuffer");
+                Self::process_init_instruction_buffer(program_id, accounts)
+            }
+            WalletInstruction::AppendPartialInsturciton { idx, instruction } => {
+                info!("Instruction: AppendPartialInsturciton");
+                let wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
+                Self::check_signatures(accounts, &wallet_account)?;
+                Self::process_append_partial_instruction(program_id, accounts, idx, instruction)
+            }
+            WalletInstruction::RunInstructionBuffer { num } => {
+                info!("Instruction: RunInstructionBuffer");
+                let wallet_account = Self::load_wallet_account(program_id, accounts)?;
+                if !wallet_account.is_initialized() {
+                    return Err(ProgramError::UninitializedAccount);
+                }
+                Self::process_run_insturction_buffer(program_id, accounts, num)
+            }
+            WalletInstruction::CloseInstructionBuffer => {
+                info!("Instruction: CloseInstructionBuffer");
+                Self::process_close_instruction_buffer(program_id, accounts)
             }
             _ => {
                 info!("Invalid instruction");
@@ -300,6 +491,8 @@ impl Processor {
             }
         }?;
 
+        // TODO move it to each needed instruction
+        let wallet_account = Self::load_wallet_account(program_id, accounts)?;
         Self::store_wallet_account(program_id, accounts, wallet_account)
     }
 }

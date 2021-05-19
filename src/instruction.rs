@@ -1,6 +1,6 @@
 //! Instruction types
 
-use crate::error::WalletError;
+use crate::{error::WalletError, utils::read_instruction};
 use serde::Serialize;
 use solana_program::{
     account_info::AccountInfo,
@@ -39,6 +39,22 @@ pub enum WalletInstruction {
     Revoke,
     /// Say hello
     Hello,
+    /// Init an instruction buffer account
+    InitInstructionBuffer,
+    /// Append instruction to instruction buffer
+    AppendPartialInsturciton {
+        /// idx of instruction in transaction
+        idx: u16,
+        /// instruction
+        instruction: Instruction,
+    },
+    /// Run instructions in the instruction buffer
+    RunInstructionBuffer {
+        /// expected number of instructions
+        num: u16,
+    },
+    /// Close an insturction buffer
+    CloseInstructionBuffer,
 }
 
 impl WalletInstruction {
@@ -105,6 +121,19 @@ impl WalletInstruction {
             4 => Self::Revoke,
             // Hello (testing)
             5 => Self::Hello,
+            6 => Self::InitInstructionBuffer,
+            7 => {
+                let mut current = 0;
+                let idx = read_u16(&mut current, rest).unwrap();
+                let instruction = read_instruction(&mut current, rest).unwrap();
+                Self::AppendPartialInsturciton { idx, instruction }
+            }
+            8 => {
+                let mut current = 0;
+                let num = read_u16(&mut current, rest).unwrap();
+                Self::RunInstructionBuffer { num }
+            }
+            9 => Self::CloseInstructionBuffer,
             _ => return Err(WalletError::InvalidInstruction.into()),
         })
     }

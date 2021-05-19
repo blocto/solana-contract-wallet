@@ -1,13 +1,14 @@
 //! State transition types
+use crate::utils::{read_instruction, write_instruction, write_pubkey, write_u16};
 use arrayref::{array_mut_ref, mut_array_refs};
 use num_enum::TryFromPrimitive;
 use solana_program::{
+    instruction::Instruction,
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::Pubkey,
     serialize_utils::{read_pubkey, read_u16, read_u8},
 };
-
 use std::collections::BTreeMap;
 
 /// Maximum signature weight for instructions
@@ -160,5 +161,66 @@ mod test {
 
         // compare
         assert_eq!(account_dst1, account_dst2)
+    }
+}
+
+/// InstructionBuffer
+#[repr(C)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InstructionBuffer {
+    /// instruction buffer owner
+    pub owner: Pubkey,
+
+    /// instruction list
+    pub instructions: Vec<PartialInstruction>,
+}
+
+/// PartialInstruction
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartialInstruction {
+    /// idx of instruction in transaction
+    pub idx: u16,
+
+    /// instruction
+    pub instruction: Instruction,
+}
+
+impl InstructionBuffer {
+    /// Unpack from slice
+    pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
+        let mut current = 0;
+        let owner = read_pubkey(&mut current, input).unwrap();
+
+        let instruction_num = read_u16(&mut current, input).unwrap();
+        let mut instructions: Vec<PartialInstruction> = Vec::new();
+        for _ in 0..instruction_num {
+            let idx = read_u16(&mut current, input).unwrap();
+            let instruction = read_instruction(&mut current, input).unwrap();
+            instructions.push(PartialInstruction { idx, instruction })
+        }
+
+        Ok(InstructionBuffer {
+            owner,
+            instructions,
+        })
+    }
+
+    /// Pack into slice
+    pub fn pack(src: Self, dst: &mut [u8]) -> Result<(), ProgramError> {
+        // reset all byte to 0
+        for i in dst.iter_mut() {
+            *i = 0;
+        }
+
+        let mut current = 0;
+        write_pubkey(&mut current, &src.owner, dst)?;
+        write_u16(&mut current, src.instructions.len() as u16, dst)?;
+        for ins in src.instructions.iter() {
+            write_u16(&mut current, ins.idx, dst)?;
+            write_instruction(&mut current, &ins.instruction, dst)?;
+        }
+
+        Ok(())
     }
 }
