@@ -261,10 +261,6 @@ impl Processor {
     let instruction = WalletInstruction::unpack(input, &accounts)?;
 
     match instruction {
-      WalletInstruction::Hello if is_wallet_initialized => {
-        info!("Instruction: Hello");
-        Self::process_hello()
-      }
       WalletInstruction::AddOwner { owners } if !is_wallet_initialized => {
         info!("Instruction: AddOwner (Initialize Wallet)");
         Self::process_initialize_wallet(&mut wallet_account, owners)
@@ -289,6 +285,10 @@ impl Processor {
       } if is_wallet_initialized => {
         info!("Instruction: Invoke");
         Self::process_invoke(accounts, internal_instruction)
+      }
+      WalletInstruction::Hello if is_wallet_initialized => {
+        info!("Instruction: Hello");
+        Self::process_hello()
       }
       _ => {
         info!("Invalid instruction");
