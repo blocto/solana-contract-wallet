@@ -251,12 +251,9 @@ impl Processor {
 
   /// Process a WalletInstruction
   pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
+    // TODO distributed processing only
     let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
     let is_wallet_initialized = wallet_account.is_initialized();
-
-    if is_wallet_initialized {
-      Self::check_signatures(accounts, &wallet_account)?;
-    }
 
     let instruction = WalletInstruction::unpack(input, &accounts)?;
 
@@ -267,28 +264,34 @@ impl Processor {
       }
       WalletInstruction::AddOwner { owners } if is_wallet_initialized => {
         info!("Instruction: AddOwner");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_add_owner(&mut wallet_account, owners)
       }
       WalletInstruction::RemoveOwner { pubkey } if is_wallet_initialized => {
         info!("Instruction: RemoveOwner");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_remove_owner(&mut wallet_account, pubkey)
       }
       WalletInstruction::Recovery { owners } if is_wallet_initialized => {
         info!("Instruction: Recovery");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_recovery(&mut wallet_account, owners)
       }
       WalletInstruction::Revoke if is_wallet_initialized => {
         info!("Instruction: Revoke");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_revoke(&mut wallet_account)
       }
       WalletInstruction::Invoke {
         instruction: internal_instruction,
       } if is_wallet_initialized => {
         info!("Instruction: Invoke");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_invoke(accounts, internal_instruction)
       }
       WalletInstruction::Hello if is_wallet_initialized => {
         info!("Instruction: Hello");
+        Self::check_signatures(accounts, &wallet_account)?;
         Self::process_hello()
       }
       _ => {
