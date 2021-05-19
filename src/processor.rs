@@ -278,6 +278,7 @@ impl Processor {
         Self::process_recovery(&mut wallet_account, owners)
       }
       WalletInstruction::Revoke if is_wallet_initialized => {
+        info!("Instruction: Revoke");
         Self::process_revoke(&mut wallet_account)
       }
       WalletInstruction::Invoke {
