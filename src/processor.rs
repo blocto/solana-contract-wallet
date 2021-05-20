@@ -256,7 +256,6 @@ impl Processor {
         let accounts_iter = &mut accounts.iter();
         let instruction_account_info = next_account_info(accounts_iter)?;
         let owner_account_info = next_account_info(accounts_iter)?;
-
         let mut sequence_instructions =
             InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
         if sequence_instructions.owner != Pubkey::default() {
@@ -406,12 +405,14 @@ impl Processor {
                 // TODO add init instruction to handle it
                 if !is_wallet_initialized {
                     info!("Instruction: AddOwner (Initialize Wallet)");
-                    Self::process_initialize_wallet(&mut wallet_account, owners)
+                    Self::process_initialize_wallet(&mut wallet_account, owners)?;
                 } else {
                     info!("Instruction: AddOwner");
                     Self::check_signatures(accounts, &wallet_account)?;
-                    Self::process_add_owner(&mut wallet_account, owners)
+                    Self::process_add_owner(&mut wallet_account, owners)?;
                 }
+
+                Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::RemoveOwner { pubkey } => {
                 info!("Instruction: RemoveOwner");
@@ -420,7 +421,9 @@ impl Processor {
                     return Err(ProgramError::UninitializedAccount);
                 }
                 Self::check_signatures(accounts, &wallet_account)?;
-                Self::process_remove_owner(&mut wallet_account, pubkey)
+                Self::process_remove_owner(&mut wallet_account, pubkey)?;
+
+                Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::Recovery { owners } => {
                 info!("Instruction: Recovery");
@@ -429,7 +432,9 @@ impl Processor {
                     return Err(ProgramError::UninitializedAccount);
                 }
                 Self::check_signatures(accounts, &wallet_account)?;
-                Self::process_recovery(&mut wallet_account, owners)
+                Self::process_recovery(&mut wallet_account, owners)?;
+
+                Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::Revoke => {
                 info!("Instruction: Revoke");
@@ -438,7 +443,9 @@ impl Processor {
                     return Err(ProgramError::UninitializedAccount);
                 }
                 Self::check_signatures(accounts, &wallet_account)?;
-                Self::process_revoke(&mut wallet_account)
+                Self::process_revoke(&mut wallet_account)?;
+
+                Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::Invoke {
                 instruction: internal_instruction,
@@ -490,10 +497,7 @@ impl Processor {
                 Err(WalletError::InvalidInstruction.into())
             }
         }?;
-
-        // TODO move it to each needed instruction
-        let wallet_account = Self::load_wallet_account(program_id, accounts)?;
-        Self::store_wallet_account(program_id, accounts, wallet_account)
+        Ok(())
     }
 }
 
