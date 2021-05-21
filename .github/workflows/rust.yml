@@ -1,0 +1,16 @@
+name: Rust
+on: [push, pull_request]
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup
+        uses: actions/checkout@v2
+      - uses: actions-rs/cargo@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Lint
+        run: cargo fmt --all -- --check
+      - name: Test
+        run: cargo test --verbose
