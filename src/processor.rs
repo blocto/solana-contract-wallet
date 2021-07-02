@@ -127,7 +127,6 @@ impl Processor {
         let accounts_iter = &mut accounts.iter();
         let wallet_account = next_account_info(accounts_iter)?;
         let auth_account = next_account_info(accounts_iter)?;
-        let payer_account = next_account_info(accounts_iter)?;
 
         let mut pass_accounts = Vec::new();
 
@@ -136,19 +135,10 @@ impl Processor {
         pass_accounts.push(wallet_account.clone());
         // msg!(bs58::encode(auth_account.key.to_bytes()).into_string().as_str());
         pass_accounts.push(auth_account.clone());
-        pass_accounts.push(payer_account.clone());
 
         for account in accounts_iter {
             // msg!(bs58::encode(account.key.to_bytes()).into_string().as_str());
             pass_accounts.push(account.clone());
-        }
-
-        // limit payer auth
-        let mut instruction = instruction.clone();
-        for account in &mut instruction.accounts {
-            if &account.pubkey == payer_account.key {
-                account.is_signer = false;
-            }
         }
 
         invoke_signed(
