@@ -1,11 +1,11 @@
 //! State transition types
 use crate::utils::{read_instruction, write_instruction, write_pubkey, write_u16};
-use arrayref::{array_mut_ref, mut_array_refs};
 use num_enum::TryFromPrimitive;
 use solana_program::{
     instruction::Instruction,
+    msg,
     program_error::ProgramError,
-    program_pack::{IsInitialized, Pack, Sealed},
+    program_pack::{IsInitialized, Sealed},
     pubkey::Pubkey,
     serialize_utils::{read_pubkey, read_u16, read_u8},
 };
@@ -13,9 +13,6 @@ use std::collections::BTreeMap;
 
 /// Maximum signature weight for instructions
 pub const MIN_WEIGHT: u16 = 1000;
-
-/// Maximum number of multisignature owners
-pub const MAX_OWNERS: usize = 101;
 
 /// Account data.
 #[repr(C)]
@@ -25,19 +22,20 @@ pub struct Account {
     pub state: AccountState,
     /// owners is a map (public key => weight)
     pub owners: BTreeMap<Pubkey, u16>,
+    /// only use in program, not pack into account
+    pub max_owners: usize,
 }
 
-impl Pack for Account {
+impl Account {
     /*
-      is_init = 1 byte
-      (public key + key weight) * MAX_OWNERS = (32 + 2) * 101 = 3434
-      ---
-      total: 375
+        Account Len = state   + (pubkey_key + key_weight) * MAX_OWNERS
+                    =    1    + (    32     +      2    ) * MAX_OWNERS
     */
-    const LEN: usize = 3435;
 
-    fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+    /// give data and parse it as an account
+    pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() == 0 || (src.len() - 1) % 34 != 0 {
+            msg!(&format!("check account length falied, len: {}", src.len()));
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -57,29 +55,28 @@ impl Pack for Account {
             state: AccountState::try_from_primitive(state)
                 .or(Err(ProgramError::InvalidAccountData))?,
             owners: owners,
+            max_owners: (src.len() - 1) / 34,
         })
     }
 
-    fn pack_into_slice(&self, dst: &mut [u8]) {
+    /// store current account to a given data slice
+    pub fn pack_into_slice(&self, dst: &mut [u8]) -> Result<(), ProgramError> {
         // reset all byte to 0
         for i in dst.iter_mut() {
             *i = 0;
         }
 
-        let dst = array_mut_ref![dst, 0, Account::LEN];
-
-        let (is_init, key_and_weight) = mut_array_refs![dst, 1; ..;];
-
-        is_init.copy_from_slice(&(self.state as u8).to_le_bytes());
-
-        let mut start = 0;
+        let mut current = 0;
+        dst[current] = (self.state as u8).into();
+        current += 1;
         for (pubkey, weight) in &self.owners {
-            key_and_weight[start..start + 32].copy_from_slice(pubkey.as_ref());
-            start += 32;
-
-            key_and_weight[start..start + 2].copy_from_slice(&weight.to_le_bytes());
-            start += 2;
+            // pubkey
+            write_pubkey(&mut current, pubkey, dst)?;
+            // key weight
+            write_u16(&mut current, *weight, dst)?;
         }
+
+        Ok(())
     }
 }
 
@@ -123,12 +120,14 @@ mod test {
         let mut account = Account {
             state: AccountState::Initialized,
             owners: BTreeMap::<Pubkey, u16>::new(),
+            max_owners: 101,
         };
         account.owners.insert(pubkey1, 999);
         account.owners.insert(pubkey2, 1);
 
-        let mut dst = vec![0x00; Account::LEN];
-        account.pack_into_slice(&mut dst);
+        let mut dst = vec![0x00; 3435];
+
+        assert_eq!(account.pack_into_slice(&mut dst), Ok(()));
 
         let unpack_account = Account::unpack_from_slice(&dst).unwrap();
 
@@ -137,8 +136,8 @@ mod test {
 
     #[test]
     fn test_account_pack_into_exist_data() {
-        let mut account_dst1 = vec![0x00; Account::LEN];
-        let mut account_dst2 = vec![0x00; Account::LEN];
+        let mut account_dst1 = vec![0x00; 3435];
+        let mut account_dst2 = vec![0x00; 3435];
 
         // create a init account
         let mut account = Account {
@@ -147,17 +146,18 @@ mod test {
               Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap() => 1000,
               Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
             },
+            max_owners: 101,
         };
-        account.pack_into_slice(&mut account_dst1);
+        assert_eq!(account.pack_into_slice(&mut account_dst1), Ok(()));
 
         // remove owner and pack into origin destination
         account
             .owners
             .remove(&Pubkey::from_str("A4iUVr5KjmsLymUcv4eSKPedUtoaBceiPeGipKMYc69b").unwrap());
-        account.pack_into_slice(&mut account_dst1);
+        assert_eq!(account.pack_into_slice(&mut account_dst1), Ok(()));
 
         // pack into another destination
-        account.pack_into_slice(&mut account_dst2);
+        assert_eq!(account.pack_into_slice(&mut account_dst2), Ok(()));
 
         // compare
         assert_eq!(account_dst1, account_dst2)

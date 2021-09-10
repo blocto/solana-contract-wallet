@@ -3,19 +3,19 @@
 use crate::{
     error::WalletError,
     instruction::WalletInstruction,
-    state::{Account, AccountState, InstructionBuffer, PartialInstruction, MAX_OWNERS, MIN_WEIGHT},
+    state::{Account, AccountState, InstructionBuffer, PartialInstruction, MIN_WEIGHT},
 };
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    msg,
     instruction::Instruction,
+    msg,
     program::invoke_signed,
     program_error::ProgramError,
-    program_pack::{IsInitialized, Pack},
+    program_pack::IsInitialized,
     pubkey::Pubkey,
 };
-use std::{collections::BTreeMap, mem};
+use std::collections::BTreeMap;
 
 /// Program state handler.
 pub struct Processor {}
@@ -49,7 +49,7 @@ impl Processor {
         wallet_account: &mut Account,
         owners: BTreeMap<Pubkey, u16>,
     ) -> ProgramResult {
-        if wallet_account.owners.len() + owners.len() > MAX_OWNERS {
+        if wallet_account.owners.len() + owners.len() > wallet_account.max_owners {
             msg!("WalletError: too many owners");
             return Err(WalletError::InvalidInstruction.into());
         }
@@ -91,7 +91,7 @@ impl Processor {
         wallet_account: &mut Account,
         owners: BTreeMap<Pubkey, u16>,
     ) -> ProgramResult {
-        if owners.len() > MAX_OWNERS {
+        if owners.len() > wallet_account.max_owners {
             msg!("WalletError: too many owners");
             return Err(WalletError::InvalidInstruction.into());
         }
@@ -211,13 +211,7 @@ impl Processor {
             return Err(ProgramError::IncorrectProgramId);
         }
 
-        // The data must be large enough to hold a u64 count
-        if walllet_account.try_data_len()? < mem::size_of::<Account>() {
-            msg!("Wallet account data length too small for Account");
-            return Err(ProgramError::InvalidAccountData);
-        }
-
-        Account::unpack_unchecked(&walllet_account.data.borrow())
+        Account::unpack_from_slice(&walllet_account.data.borrow())
     }
 
     /// Store wallet account data
@@ -244,7 +238,7 @@ impl Processor {
             return Err(ProgramError::InvalidAccountData);
         }
 
-        Account::pack(wallet_account, &mut account.data.borrow_mut())?;
+        Account::pack_into_slice(&wallet_account, &mut account.data.borrow_mut())?;
 
         Ok(())
     }
@@ -509,6 +503,7 @@ mod test {
         let mut init_account = Account {
             state: AccountState::Uninitialized,
             owners: BTreeMap::new(),
+            max_owners: 101,
         };
         let init_keys = btreemap! {
           Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1,
@@ -517,6 +512,7 @@ mod test {
         let expected_account = Account {
             state: AccountState::Uninitialized,
             owners: BTreeMap::new(),
+            max_owners: 101,
         };
 
         assert_eq!(
@@ -531,6 +527,7 @@ mod test {
         let mut init_account = Account {
             state: AccountState::Uninitialized,
             owners: BTreeMap::new(),
+            max_owners: 101,
         };
         let init_keys = btreemap! {
           Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 999,
@@ -546,6 +543,7 @@ mod test {
             Account {
                 state: AccountState::Initialized,
                 owners: init_keys.clone(),
+                max_owners: 101,
             },
         );
     }
@@ -557,6 +555,7 @@ mod test {
             owners: btreemap! {
               Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
             },
+            max_owners: 101,
         };
 
         let add_keys = btreemap! {Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1};
@@ -571,6 +570,7 @@ mod test {
               Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000,
               Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1
             },
+            max_owners: 101,
         };
         assert_eq!(init_account, expected_account);
     }
@@ -580,6 +580,7 @@ mod test {
         let mut wallet_account = Account {
             state: AccountState::Initialized,
             owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+            max_owners: 101,
         };
         let recovery_keys = btreemap! {
           Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1,
@@ -595,6 +596,7 @@ mod test {
         let mut wallet_account = Account {
             state: AccountState::Initialized,
             owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+            max_owners: 101,
         };
         let recovery_keys = btreemap! {Pubkey::from_str("65JQyZBU2RzNpP9vTdW5zSzujZR5JHZyChJsDWvkbM8u").unwrap() => 1000};
         assert_eq!(
@@ -605,6 +607,7 @@ mod test {
         let expected_account = Account {
             state: AccountState::Initialized,
             owners: recovery_keys.clone(),
+            max_owners: 101,
         };
         assert_eq!(wallet_account, expected_account);
     }
@@ -614,12 +617,14 @@ mod test {
         let mut wallet_account = Account {
             state: AccountState::Initialized,
             owners: btreemap! {Pubkey::from_str("EmPaWGCw48Sxu9Mu9pVrxe4XL2JeXUNTfoTXLuLz31gv").unwrap() => 1000},
+            max_owners: 101,
         };
         assert_eq!(Processor::process_revoke(&mut wallet_account), Ok(()));
 
         let expected_account = Account {
             state: AccountState::Initialized,
             owners: btreemap! {},
+            max_owners: 101,
         };
         assert_eq!(wallet_account, expected_account);
     }
