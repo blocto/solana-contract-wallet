@@ -4,7 +4,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use solana_program::{
     decode_error::DecodeError,
-    info,
+    msg,
     program_error::{PrintProgramError, ProgramError},
 };
 use thiserror::Error;
@@ -50,12 +50,12 @@ impl PrintProgramError for WalletError {
         E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
     {
         match self {
-            WalletError::NotRentExempt => info!("WalletError: NotRentExempt"),
-            WalletError::InsufficientFunds => info!("WalletError: InsufficientFunds"),
-            WalletError::InvalidOwner => info!("WalletError: InvalidOwner"),
-            WalletError::InsufficientWeight => info!("WalletError: InsufficientWeight"),
-            WalletError::InvalidInstruction => info!("WalletError: InvalidInstruction"),
-            WalletError::InvalidState => info!("WalletError: InvalidState"),
+            WalletError::NotRentExempt => msg!("WalletError: NotRentExempt"),
+            WalletError::InsufficientFunds => msg!("WalletError: InsufficientFunds"),
+            WalletError::InvalidOwner => msg!("WalletError: InvalidOwner"),
+            WalletError::InsufficientWeight => msg!("WalletError: InsufficientWeight"),
+            WalletError::InvalidInstruction => msg!("WalletError: InvalidInstruction"),
+            WalletError::InvalidState => msg!("WalletError: InvalidState"),
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::{
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    info,
+    msg,
     instruction::Instruction,
     program::invoke_signed,
     program_error::ProgramError,
@@ -22,7 +22,7 @@ pub struct Processor {}
 impl Processor {
     /// Process a Hello instruction
     fn process_hello() -> ProgramResult {
-        info!("Hello!");
+        msg!("Hello!");
 
         Ok(())
     }
@@ -50,17 +50,17 @@ impl Processor {
         owners: BTreeMap<Pubkey, u16>,
     ) -> ProgramResult {
         if wallet_account.owners.len() + owners.len() > MAX_OWNERS {
-            info!("WalletError: too many owners");
+            msg!("WalletError: too many owners");
             return Err(WalletError::InvalidInstruction.into());
         }
 
         for (pubkey, weight) in owners {
             if weight == 0 {
-                info!("WalletError: Key weight cannot be 0");
+                msg!("WalletError: Key weight cannot be 0");
                 return Err(WalletError::InvalidInstruction.into());
             }
             if wallet_account.owners.contains_key(&pubkey) {
-                info!("WalletError: Owner already exists");
+                msg!("WalletError: Owner already exists");
                 return Err(WalletError::InvalidInstruction.into());
             }
             wallet_account.owners.insert(pubkey, weight);
@@ -73,7 +73,7 @@ impl Processor {
     fn process_remove_owner(wallet_account: &mut Account, pubkey: Pubkey) -> ProgramResult {
         // check target exist
         if !wallet_account.owners.contains_key(&pubkey) {
-            info!("WalletError: Cannot find the target owner to remove");
+            msg!("WalletError: Cannot find the target owner to remove");
             return Err(WalletError::InvalidInstruction.into());
         }
 
@@ -92,7 +92,7 @@ impl Processor {
         owners: BTreeMap<Pubkey, u16>,
     ) -> ProgramResult {
         if owners.len() > MAX_OWNERS {
-            info!("WalletError: too many owners");
+            msg!("WalletError: too many owners");
             return Err(WalletError::InvalidInstruction.into());
         }
 
@@ -103,11 +103,11 @@ impl Processor {
 
         for (pubkey, weight) in owners {
             if weight == 0 {
-                info!("WalletError: Key weight cannot be 0");
+                msg!("WalletError: Key weight cannot be 0");
                 return Err(WalletError::InvalidInstruction.into());
             }
             if wallet_account.owners.contains_key(&pubkey) {
-                info!("WalletError: Owner already exists");
+                msg!("WalletError: Owner already exists");
                 return Err(WalletError::InvalidInstruction.into());
             }
             wallet_account.owners.insert(pubkey, weight);
@@ -132,14 +132,14 @@ impl Processor {
         let mut pass_accounts = Vec::new();
 
         // Pass all accounts to invoke call
-        // info!(bs58::encode(wallet_account.key.to_bytes()).into_string().as_str());
+        // msg!(bs58::encode(wallet_account.key.to_bytes()).into_string().as_str());
         pass_accounts.push(wallet_account.clone());
-        // info!(bs58::encode(auth_account.key.to_bytes()).into_string().as_str());
+        // msg!(bs58::encode(auth_account.key.to_bytes()).into_string().as_str());
         pass_accounts.push(auth_account.clone());
         pass_accounts.push(payer_account.clone());
 
         for account in accounts_iter {
-            // info!(bs58::encode(account.key.to_bytes()).into_string().as_str());
+            // msg!(bs58::encode(account.key.to_bytes()).into_string().as_str());
             pass_accounts.push(account.clone());
         }
 
@@ -187,7 +187,7 @@ impl Processor {
         }
 
         if total_key_weight < MIN_WEIGHT {
-            info!("WalletError: Signature weight too low");
+            msg!("WalletError: Signature weight too low");
             return Err(WalletError::InsufficientWeight.into());
         }
 
@@ -207,13 +207,13 @@ impl Processor {
 
         // The account must be owned by the program in order to modify its data
         if walllet_account.owner != program_id {
-            info!("Wallet account does not have the correct program id");
+            msg!("Wallet account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
         }
 
         // The data must be large enough to hold a u64 count
         if walllet_account.try_data_len()? < mem::size_of::<Account>() {
-            info!("Wallet account data length too small for Account");
+            msg!("Wallet account data length too small for Account");
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -234,13 +234,13 @@ impl Processor {
 
         // The account must be owned by the program in order to modify its data
         if account.owner != program_id {
-            info!("Wallet account does not have the correct program id");
+            msg!("Wallet account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
         }
 
         // The account must be declaired writable
         if !account.is_writable {
-            info!("Wallet account was not declaired writable");
+            msg!("Wallet account was not declaired writable");
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -284,14 +284,14 @@ impl Processor {
         let owner_account_info = next_account_info(accounts_iter)?;
 
         if !owner_account_info.is_signer {
-            info!(&format!("{} should be a signer", owner_account_info.key));
+            msg!(&format!("{} should be a signer", owner_account_info.key));
             return Err(ProgramError::MissingRequiredSignature);
         }
 
         let mut sequence_instructions =
             InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
         if sequence_instructions.owner != *owner_account_info.key {
-            info!(&format!("{} owner mismatch", instruction_account_info.key));
+            msg!(&format!("{} owner mismatch", instruction_account_info.key));
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -373,7 +373,7 @@ impl Processor {
         let owner_account_info = next_account_info(accounts_iter)?;
 
         if !owner_account_info.is_signer {
-            info!(&format!("{} should be a signer", owner_account_info.key));
+            msg!(&format!("{} should be a signer", owner_account_info.key));
             return Err(ProgramError::MissingRequiredSignature);
         }
 
@@ -404,10 +404,10 @@ impl Processor {
 
                 // TODO add init instruction to handle it
                 if !is_wallet_initialized {
-                    info!("Instruction: AddOwner (Initialize Wallet)");
+                    msg!("Instruction: AddOwner (Initialize Wallet)");
                     Self::process_initialize_wallet(&mut wallet_account, owners)?;
                 } else {
-                    info!("Instruction: AddOwner");
+                    msg!("Instruction: AddOwner");
                     Self::check_signatures(accounts, &wallet_account)?;
                     Self::process_add_owner(&mut wallet_account, owners)?;
                 }
@@ -415,7 +415,7 @@ impl Processor {
                 Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::RemoveOwner { pubkey } => {
-                info!("Instruction: RemoveOwner");
+                msg!("Instruction: RemoveOwner");
                 let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -426,7 +426,7 @@ impl Processor {
                 Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::Recovery { owners } => {
-                info!("Instruction: Recovery");
+                msg!("Instruction: Recovery");
                 let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -437,7 +437,7 @@ impl Processor {
                 Self::store_wallet_account(program_id, accounts, wallet_account)
             }
             WalletInstruction::Revoke => {
-                info!("Instruction: Revoke");
+                msg!("Instruction: Revoke");
                 let mut wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -450,7 +450,7 @@ impl Processor {
             WalletInstruction::Invoke {
                 instruction: internal_instruction,
             } => {
-                info!("Instruction: Invoke");
+                msg!("Instruction: Invoke");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -459,7 +459,7 @@ impl Processor {
                 Self::process_invoke(accounts, internal_instruction)
             }
             WalletInstruction::Hello => {
-                info!("Instruction: Hello");
+                msg!("Instruction: Hello");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -468,11 +468,11 @@ impl Processor {
                 Self::process_hello()
             }
             WalletInstruction::InitInstructionBuffer => {
-                info!("Instruction: InitInstructionBuffer");
+                msg!("Instruction: InitInstructionBuffer");
                 Self::process_init_instruction_buffer(program_id, accounts)
             }
             WalletInstruction::AppendPartialInsturciton { idx, instruction } => {
-                info!("Instruction: AppendPartialInsturciton");
+                msg!("Instruction: AppendPartialInsturciton");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -481,7 +481,7 @@ impl Processor {
                 Self::process_append_partial_instruction(program_id, accounts, idx, instruction)
             }
             WalletInstruction::RunInstructionBuffer { num } => {
-                info!("Instruction: RunInstructionBuffer");
+                msg!("Instruction: RunInstructionBuffer");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
@@ -489,12 +489,8 @@ impl Processor {
                 Self::process_run_insturction_buffer(program_id, accounts, num)
             }
             WalletInstruction::CloseInstructionBuffer => {
-                info!("Instruction: CloseInstructionBuffer");
+                msg!("Instruction: CloseInstructionBuffer");
                 Self::process_close_instruction_buffer(program_id, accounts)
-            }
-            _ => {
-                info!("Invalid instruction");
-                Err(WalletError::InvalidInstruction.into())
             }
         }?;
         Ok(())
