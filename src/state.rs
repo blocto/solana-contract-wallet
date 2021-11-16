@@ -1,8 +1,7 @@
 //! State transition types
-use crate::utils::{read_instruction, write_instruction, write_pubkey, write_u16};
+use crate::utils::{write_pubkey, write_u16};
 use num_enum::TryFromPrimitive;
 use solana_program::{
-    instruction::Instruction,
     msg,
     program_error::ProgramError,
     program_pack::{IsInitialized, Sealed},
@@ -171,39 +170,22 @@ pub struct InstructionBuffer {
     /// instruction buffer owner
     pub owner: Pubkey,
 
-    /// instruction list
-    pub instructions: Vec<PartialInstruction>,
-}
-
-/// PartialInstruction
-#[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PartialInstruction {
-    /// idx of instruction in transaction
-    pub idx: u16,
-
-    /// instruction
-    pub instruction: Instruction,
+    /// data
+    pub data: Vec<u8>,
 }
 
 impl InstructionBuffer {
     /// Unpack from slice
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let mut current = 0;
+
+        // parse owner
         let owner = read_pubkey(&mut current, input).unwrap();
 
-        let instruction_num = read_u16(&mut current, input).unwrap();
-        let mut instructions: Vec<PartialInstruction> = Vec::new();
-        for _ in 0..instruction_num {
-            let idx = read_u16(&mut current, input).unwrap();
-            let instruction = read_instruction(&mut current, input).unwrap();
-            instructions.push(PartialInstruction { idx, instruction })
-        }
+        // parse data
+        let data: Vec<u8> = input[current..].iter().cloned().collect();
 
-        Ok(InstructionBuffer {
-            owner,
-            instructions,
-        })
+        Ok(InstructionBuffer { owner, data })
     }
 
     /// Pack into slice
@@ -214,12 +196,12 @@ impl InstructionBuffer {
         }
 
         let mut current = 0;
+
+        // write owner
         write_pubkey(&mut current, &src.owner, dst)?;
-        write_u16(&mut current, src.instructions.len() as u16, dst)?;
-        for ins in src.instructions.iter() {
-            write_u16(&mut current, ins.idx, dst)?;
-            write_instruction(&mut current, &ins.instruction, dst)?;
-        }
+
+        // write data
+        dst[current..current + src.data.len()].clone_from_slice(&src.data);
 
         Ok(())
     }

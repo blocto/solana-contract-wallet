@@ -1,13 +1,13 @@
 
 [package]
-name = "solana-contract-wallet"
-version = "0.0.1"
-description = "Solana smart contract wallet program written in Rust"
 authors = ["Hsuan Lee <hlee@portto.io>", "portto <dev@portto.io>"]
-repository = "https://github.com/portto/solana-contract-wallet"
-license = "Apache-2.0"
-homepage = "https://solana.com/"
+description = "Solana smart contract wallet program written in Rust"
 edition = "2018"
+homepage = "https://solana.com/"
+license = "Apache-2.0"
+name = "solana-contract-wallet"
+repository = "https://github.com/portto/solana-contract-wallet"
+version = "0.0.1"
 
 [features]
 no-entrypoint = []
@@ -17,16 +17,15 @@ arrayref = "0.3.6"
 bincode = "1.0"
 bs58 = "0.3.1"
 byteorder = "1.3"
+maplit = "1.0.2"
 num-derive = "0.3"
 num-traits = "0.2"
 num_enum = "0.5.1"
 serde = "1.0.112"
 serde_derive = "1.0.103"
 serde_json = "1.0.56"
-solana-program = "=1.7.11"
+solana-program = "=1.8.3"
 thiserror = "1.0"
-maplit = "1.0.2"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-

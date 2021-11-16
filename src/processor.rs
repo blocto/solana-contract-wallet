@@ -3,7 +3,8 @@
 use crate::{
     error::WalletError,
     instruction::WalletInstruction,
-    state::{Account, AccountState, InstructionBuffer, PartialInstruction, MIN_WEIGHT},
+    state::{Account, AccountState, InstructionBuffer, MIN_WEIGHT},
+    utils::read_instruction,
 };
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -269,12 +270,12 @@ impl Processor {
     fn process_append_partial_instruction(
         _program_id: &Pubkey,
         accounts: &[AccountInfo],
-        idx: u16,
-        instruction: Instruction,
+        offset: u16,
+        data: Vec<u8>,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
         let _wallet_account_info = next_account_info(accounts_iter)?;
-        let instruction_account_info = next_account_info(accounts_iter)?;
+        let instruction_buffer_account_info = next_account_info(accounts_iter)?;
         let owner_account_info = next_account_info(accounts_iter)?;
 
         if !owner_account_info.is_signer {
@@ -282,21 +283,22 @@ impl Processor {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        let mut sequence_instructions =
-            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
-        if sequence_instructions.owner != *owner_account_info.key {
-            msg!(&format!("{} owner mismatch", instruction_account_info.key));
+        let mut instruction_buffer =
+            InstructionBuffer::unpack(&instruction_buffer_account_info.data.borrow())?;
+        if instruction_buffer.owner != *owner_account_info.key {
+            msg!(&format!(
+                "buffer account owner mismatch, want: {}, got: {}",
+                instruction_buffer.owner, *owner_account_info.key
+            ));
             return Err(ProgramError::InvalidAccountData);
         }
 
-        sequence_instructions.owner = *owner_account_info.key;
-        sequence_instructions
-            .instructions
-            .push(PartialInstruction { idx, instruction });
+        instruction_buffer.data[offset as usize..offset as usize + data.len()]
+            .copy_from_slice(&data[..]);
 
         InstructionBuffer::pack(
-            sequence_instructions,
-            &mut instruction_account_info.data.borrow_mut(),
+            instruction_buffer,
+            &mut instruction_buffer_account_info.data.borrow_mut(),
         )?;
 
         Ok(())
@@ -305,55 +307,71 @@ impl Processor {
     fn process_run_insturction_buffer(
         _program_id: &Pubkey,
         accounts: &[AccountInfo],
-        num: u16,
+        expected_instruction_count: u16,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
         let wallet_account = next_account_info(accounts_iter)?;
-        let instruction_account_info = next_account_info(accounts_iter)?;
+        let instruction_buffer_account_info = next_account_info(accounts_iter)?;
         let owner_account_info = next_account_info(accounts_iter)?;
 
         if !owner_account_info.is_signer {
+            msg!(&format!("{} should be a signer", owner_account_info.key));
             return Err(ProgramError::MissingRequiredSignature);
         }
-
-        let sequence_instructions =
-            InstructionBuffer::unpack(&instruction_account_info.data.borrow())?;
-        if sequence_instructions.instructions.len() != usize::from(num) {
+        let instruction_buffer =
+            InstructionBuffer::unpack(&instruction_buffer_account_info.data.borrow())?;
+        if instruction_buffer.owner != *owner_account_info.key {
+            msg!(&format!(
+                "buffer account owner mismatch, want: {}, got: {}",
+                instruction_buffer.owner, *owner_account_info.key
+            ));
             return Err(ProgramError::InvalidAccountData);
         }
-        if sequence_instructions.owner != *owner_account_info.key {
-            return Err(ProgramError::InvalidAccountData);
-        }
 
+        // prepare account info
         let mut pass_accounts = Vec::new();
-
-        let instruction_num = sequence_instructions.instructions.len();
-        let mut inner_instructions = BTreeMap::<u16, &Instruction>::new();
-        for ins in sequence_instructions.instructions.iter() {
-            inner_instructions.insert(ins.idx, &ins.instruction);
-        }
-
         for account in accounts_iter {
             let mut pass_account = account.clone();
             if pass_account.key == owner_account_info.key {
                 pass_account.is_signer = false;
             }
-            pass_accounts.push(account.clone());
+            pass_accounts.push(pass_account);
         }
 
-        for n in 0..instruction_num {
+        // execute instructions
+        let mut current = 0;
+        let mut instruction_count = 0;
+        while current < instruction_buffer.data.len() {
+            let instruction = read_instruction(&mut current, &instruction_buffer.data[..])?;
+            if instruction.program_id == Pubkey::default()
+                && instruction.accounts.len() == 0
+                && instruction.data.len() == 0
+            {
+                break;
+            }
             invoke_signed(
-                inner_instructions.get(&(n as u16)).unwrap(),
-                pass_accounts.as_slice(),
+                &instruction,
+                &pass_accounts,
                 &[&[&wallet_account.key.to_bytes()]],
             )?;
+            instruction_count += 1;
         }
 
+        // check instruction count
+        if instruction_count != expected_instruction_count {
+            msg!(&format!(
+                "instruction count mismatch, want: {}, got: {}",
+                expected_instruction_count, instruction_count
+            ));
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        // close buffer account
         let dest_starting_lamports = owner_account_info.lamports();
         **owner_account_info.lamports.borrow_mut() = dest_starting_lamports
-            .checked_add(instruction_account_info.lamports())
+            .checked_add(instruction_buffer_account_info.lamports())
             .ok_or(ProgramError::InvalidAccountData)?;
-        **instruction_account_info.lamports.borrow_mut() = 0;
+        **instruction_buffer_account_info.lamports.borrow_mut() = 0;
 
         Ok(())
     }
@@ -465,22 +483,28 @@ impl Processor {
                 msg!("Instruction: InitInstructionBuffer");
                 Self::process_init_instruction_buffer(program_id, accounts)
             }
-            WalletInstruction::AppendPartialInsturciton { idx, instruction } => {
+            WalletInstruction::AppendPartialInsturciton { offset, data } => {
                 msg!("Instruction: AppendPartialInsturciton");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
                 }
                 Self::check_signatures(accounts, &wallet_account)?;
-                Self::process_append_partial_instruction(program_id, accounts, idx, instruction)
+                Self::process_append_partial_instruction(program_id, accounts, offset, data)
             }
-            WalletInstruction::RunInstructionBuffer { num } => {
+            WalletInstruction::RunInstructionBuffer {
+                expected_instruction_count,
+            } => {
                 msg!("Instruction: RunInstructionBuffer");
                 let wallet_account = Self::load_wallet_account(program_id, accounts)?;
                 if !wallet_account.is_initialized() {
                     return Err(ProgramError::UninitializedAccount);
                 }
-                Self::process_run_insturction_buffer(program_id, accounts, num)
+                Self::process_run_insturction_buffer(
+                    program_id,
+                    accounts,
+                    expected_instruction_count,
+                )
             }
             WalletInstruction::CloseInstructionBuffer => {
                 msg!("Instruction: CloseInstructionBuffer");
